@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"github.com/openmcp-project/controller-utils/pkg/clusters"
-	"github.com/openmcp-project/openmcp-operator/lib/clusteraccess"
+	clustersv1alpha1 "github.com/openmcp-project/openmcp-operator/api/clusters/v1alpha1"
 	"k8s.io/apimachinery/pkg/api/equality"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -39,8 +39,12 @@ type ServiceProviderReconciler[T ServiceProviderAPI, PC ProviderConfig] interfac
 type ClusterContext struct {
 	// MCPCluster is the managed control plane that belongs to the current reconcile request
 	MCPCluster *clusters.Cluster
+	// MCPAccessSecretKey provides the object key to retrieve the MCP kubeconfig secret
+	MCPAccessSecretKey client.ObjectKey
 	// WorkloadCluster is the workload cluster that belongs the current reconcile request
 	WorkloadCluster *clusters.Cluster
+	// WorkloadAccessSecretKey provides the object key to retrieve the workload cluster kubeconfig secret
+	WorkloadAccessSecretKey client.ObjectKey
 }
 
 // ServiceProviderAPI represents the end-user facing onboarding api type
@@ -71,6 +75,36 @@ type ProviderConfig interface {
 	PollInterval() time.Duration
 }
 
+// ClusterAccessProvider is a light weight version of the ClusterAccessReconciler
+type ClusterAccessProvider interface {
+	// MCPCluster creates a Cluster for the MCP AccessRequest.
+	// This function will only be successful if the MCP AccessRequest is granted and Reconcile returned without an error
+	// and a reconcile.Result with no RequeueAfter value.
+	MCPCluster(ctx context.Context, request reconcile.Request) (*clusters.Cluster, error)
+	// MCPAccessRequest returns the AccessRequest for the MCP cluster.
+	MCPAccessRequest(ctx context.Context, request reconcile.Request) (*clustersv1alpha1.AccessRequest, error)
+	// WorkloadCluster creates a Cluster for the Workload AccessRequest.
+	// This function will only be successful if the Workload AccessRequest is granted and Reconcile returned without an error
+	// and a reconcile.Result with no RequeueAfter value.
+	WorkloadCluster(ctx context.Context, request reconcile.Request) (*clusters.Cluster, error)
+	// WorkloadAccessRequest returns the AccessRequest for the Workload cluster.
+	WorkloadAccessRequest(ctx context.Context, request reconcile.Request) (*clustersv1alpha1.AccessRequest, error)
+	// Reconcile creates the ClusterRequests and AccessRequests for the MCP and Workload clusters based on the reconciled object.
+	// This function should be called during all reconciliations of the reconciled object.
+	// ctx is the context for the reconciliation.
+	// request is the object that is being reconciled
+	// It returns a reconcile.Result and an error if the reconciliation failed.
+	// The reconcile.Result may contain a RequeueAfter value to indicate that the reconciliation should be retried after a certain duration.
+	Reconcile(ctx context.Context, request reconcile.Request) (reconcile.Result, error)
+	// ReconcileDelete deletes the AccessRequests and ClusterRequests for the MCP and Workload clusters based on the reconciled object.
+	// This function should be called during the deletion of the reconciled object.
+	// ctx is the context for the reconciliation.
+	// request is the object that is being reconciled.
+	// It returns a reconcile.Result and an error if the reconciliation failed.
+	// The reconcile.Result may contain a RequeueAfter value to indicate that the reconciliation should be retried after a certain duration.
+	ReconcileDelete(ctx context.Context, request reconcile.Request) (reconcile.Result, error)
+}
+
 // SPReconciler implements a generic reconcile loop to separate platform
 // and service provider developer space.
 type SPReconciler[T ServiceProviderAPI, PC ProviderConfig] struct {
@@ -79,7 +113,7 @@ type SPReconciler[T ServiceProviderAPI, PC ProviderConfig] struct {
 	// onboardingCluster represents the onboarding cluster of the v2 architecture
 	onboardingCluster *clusters.Cluster
 	// clusterAccessReconciler reconciles access to MCP and workload clusters
-	clusterAccessReconciler clusteraccess.Reconciler
+	clusterAccessReconciler ClusterAccessProvider
 	// serviceProviderReonciler reconciles the end-user facing onboarding API of a service provider
 	serviceProviderReconciler ServiceProviderReconciler[T, PC]
 	// providerConfig represents the platform operator facing platform API of a service provider
@@ -110,7 +144,7 @@ func (r *SPReconciler[T, PC]) WithOnboardingCluster(c *clusters.Cluster) *SPReco
 }
 
 // WithClusterAccessReconciler sets the cluster access reconciler.
-func (r *SPReconciler[T, PC]) WithClusterAccessReconciler(car clusteraccess.Reconciler) *SPReconciler[T, PC] {
+func (r *SPReconciler[T, PC]) WithClusterAccessReconciler(car ClusterAccessProvider) *SPReconciler[T, PC] {
 	r.clusterAccessReconciler = car
 	return r
 }
@@ -124,6 +158,12 @@ func (r *SPReconciler[T, PC]) WithServiceProviderReconciler(dsr ServiceProviderR
 // WithWorkloadCluster sets if the service provider reconciler requests a workload cluster
 func (r *SPReconciler[T, PC]) WithWorkloadCluster(b bool) *SPReconciler[T, PC] {
 	r.withWorkloadCluster = b
+	return r
+}
+
+// WithProviderConfig sets if the service provider config.
+func (r *SPReconciler[T, PC]) WithProviderConfig(config PC) *SPReconciler[T, PC] {
+	r.providerConfig.Store(&config)
 	return r
 }
 
@@ -288,6 +328,11 @@ func (r *SPReconciler[T, PC]) clusters(ctx context.Context, req ctrl.Request) (C
 		return clusters, res, errors.New("mcp access missing")
 	}
 	clusters.MCPCluster = mcpCluster
+	ar, err := r.clusterAccessReconciler.MCPAccessRequest(ctx, req)
+	if err != nil {
+		return clusters, ctrl.Result{}, err
+	}
+	clusters.MCPAccessSecretKey = retrieveSecretKey(ar)
 	if r.withWorkloadCluster {
 		workloadCluster, err := r.clusterAccessReconciler.WorkloadCluster(ctx, req)
 		if err != nil {
@@ -298,6 +343,11 @@ func (r *SPReconciler[T, PC]) clusters(ctx context.Context, req ctrl.Request) (C
 			return clusters, res, errors.New("workload cluster access missing")
 		}
 		clusters.WorkloadCluster = workloadCluster
+		ar, err := r.clusterAccessReconciler.WorkloadAccessRequest(ctx, req)
+		if err != nil {
+			return clusters, ctrl.Result{}, err
+		}
+		clusters.WorkloadAccessSecretKey = retrieveSecretKey(ar)
 	}
 	return clusters, res, nil
 }
@@ -338,4 +388,14 @@ func (r *SPReconciler[T, PC]) SetupWithManager(mgr ctrl.Manager, name string, pr
 		).
 		Named(name).
 		Complete(r)
+}
+
+func retrieveSecretKey(ar *clustersv1alpha1.AccessRequest) client.ObjectKey {
+	if ar.Status.SecretRef == nil {
+		return client.ObjectKey{}
+	}
+	return client.ObjectKey{
+		Namespace: ar.Namespace,
+		Name:      ar.Status.SecretRef.Name,
+	}
 }
