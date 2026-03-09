@@ -1,4 +1,4 @@
-package runtime
+package spruntime
 
 import (
 	"k8s.io/apimachinery/pkg/api/meta"
