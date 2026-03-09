@@ -1,4 +1,4 @@
-module github.com/openmcp-project/service-provider-template
+module github.com/openmcp-project/service-provider-kyverno
 
 go 1.25.6
 
