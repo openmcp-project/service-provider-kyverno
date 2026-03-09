@@ -53,7 +53,7 @@ import (
 
 	"github.com/openmcp-project/service-provider-kyverno/api/crds"
 
-	spruntime "github.com/openmcp-project/service-provider-kyverno/pkg/spruntime"
+	"github.com/openmcp-project/service-provider-kyverno/pkg/spruntime"
 
 	kyvernosv1alpha1 "github.com/openmcp-project/service-provider-kyverno/api/v1alpha1"
 	"github.com/openmcp-project/service-provider-kyverno/internal/controller"
