@@ -28,9 +28,10 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	"github.com/openmcp-project/controller-utils/pkg/clusters"
-	apiv1alpha1 "github.com/openmcp-project/service-provider-kyverno/api/v1alpha1"
-	spruntime "github.com/openmcp-project/service-provider-kyverno/pkg/runtime"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
+
+	apiv1alpha1 "github.com/openmcp-project/service-provider-kyverno/api/v1alpha1"
+	spruntime "github.com/openmcp-project/service-provider-kyverno/pkg/spruntime"
 )
 
 // KyvernoReconciler reconciles a Kyverno object

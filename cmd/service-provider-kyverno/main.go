@@ -38,7 +38,6 @@ import (
 	"github.com/openmcp-project/openmcp-operator/lib/utils"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	"github.com/openmcp-project/service-provider-kyverno/api/crds"
 	rbacv1 "k8s.io/api/rbac/v1"
 	apiextensionv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -52,7 +51,9 @@ import (
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
 
-	spruntime "github.com/openmcp-project/service-provider-kyverno/pkg/runtime"
+	"github.com/openmcp-project/service-provider-kyverno/api/crds"
+
+	spruntime "github.com/openmcp-project/service-provider-kyverno/pkg/spruntime"
 
 	kyvernosv1alpha1 "github.com/openmcp-project/service-provider-kyverno/api/v1alpha1"
 	"github.com/openmcp-project/service-provider-kyverno/internal/controller"
