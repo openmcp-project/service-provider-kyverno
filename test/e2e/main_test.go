@@ -34,7 +34,7 @@ func TestMain(m *testing.M) {
 		ServiceProviders: []providers.ServiceProviderSetup{
 			{
 				Name:               "kyverno",
-				Image:              "ghcr.io/openmcp-project/images/service-provider-kyverno:0.0.1",
+				Image:              "ghcr.io/openmcp-project/images/service-provider-kyverno:0.0.1-linux-arm64",
 				LoadImageToCluster: true,
 			},
 		},
