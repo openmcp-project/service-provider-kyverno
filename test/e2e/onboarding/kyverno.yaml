@@ -1,6 +1,6 @@
 apiVersion: kyverno.services.openmcp.cloud/v1alpha1
-kind: ProviderConfig
+kind: Kyverno
 metadata:
-  name: kyverno
+  name: test-mcp
 spec:
-  pollInterval: 1m
+  foo: bar
