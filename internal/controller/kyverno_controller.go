@@ -90,6 +90,7 @@ func (r *KyvernoReconciler) CreateOrUpdate(ctx context.Context, svcobj *apiv1alp
 		return ctrl.Result{}, fmt.Errorf("failed to reconcile HelmRelease: %w", err)
 	}
 	l.Info("Done Reconciling Kyverno resource", "name", svcobj.Name)
+	// TODO: put in logic that checks the condition of the HelmRelease before setting the status
 	spruntime.StatusReady(svcobj)
 	return ctrl.Result{}, nil
 }
