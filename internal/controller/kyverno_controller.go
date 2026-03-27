@@ -18,10 +18,14 @@ package controller
 
 import (
 	"context"
+	"fmt"
+	"strings"
 	"time"
 
+	"github.com/fluxcd/pkg/apis/meta"
+	libutils "github.com/openmcp-project/openmcp-operator/lib/utils"
+	corev1 "k8s.io/api/core/v1"
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
-
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -30,9 +34,25 @@ import (
 	"github.com/openmcp-project/controller-utils/pkg/clusters"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 
-	apiv1alpha1 "github.com/openmcp-project/service-provider-kyverno/api/v1alpha1"
+	helmv2 "github.com/fluxcd/helm-controller/api/v2"
+	sourcev1 "github.com/fluxcd/source-controller/api/v1"
+	apiv1alpha1 "github.com/open-component-model/service-provider-ocm/api/v1alpha1"
 	spruntime "github.com/openmcp-project/service-provider-kyverno/pkg/spruntime"
 )
+
+const (
+	//HelmReleaseName is the name of the Helm release used to deploy Kyverno in the onboarding cluster.
+	HelmReleaseName = "kyverno"
+	//OCIRepositoryName is the name of the OCI repository where the Kyverno Helm chart is stored.
+	OCIRepositoryName = "oci://ghcr.io/openmcp-project/kyverno-chart"
+	//OCMSystemNamespace is the namespace in the onboarding cluster where Kyverno controller will be deployed.
+	OCMSystemNamespace = "openmcp-system"
+	// requestSuffixMCP is the suffix used for the mcp cluster.
+	requestSuffixMCP = "--mcp"
+)
+
+// clusterAccessName is the name of the access object containing the kubeconfig for the mcp target cluster.
+var clusterAccessName = apiv1alpha1.GroupVersion.Group
 
 // KyvernoReconciler reconciles a Kyverno object
 type KyvernoReconciler struct {
@@ -45,21 +65,31 @@ type KyvernoReconciler struct {
 }
 
 // CreateOrUpdate is called on every add or update event
-func (r *KyvernoReconciler) CreateOrUpdate(ctx context.Context, svcobj *apiv1alpha1.Kyverno, _ *apiv1alpha1.ProviderConfig, clusters spruntime.ClusterContext) (ctrl.Result, error) {
+func (r *KyvernoReconciler) CreateOrUpdate(ctx context.Context, svcobj *apiv1alpha1.Kyverno, providerConfig *apiv1alpha1.ProviderConfig, clusters spruntime.ClusterContext) (ctrl.Result, error) {
 	l := logf.FromContext(ctx)
+	l.Info("Reconciling Kyverno resource", "name", svcobj.Name, "namespace", svcobj.Namespace)
 	spruntime.StatusProgressing(svcobj, "Reconciling", "Reconcile in progress")
-	managedObj := &apiextensionsv1.CustomResourceDefinition{
-		ObjectMeta: metav1.ObjectMeta{
-			Name: "foos.example.domain",
-		},
+	tenantNamespace, err := libutils.StableMCPNamespace(svcobj.Name, svcobj.Namespace)
+	if err != nil {
+		return ctrl.Result{}, fmt.Errorf("failed to determine stable namespace for Kyverno instance: %w", err)
 	}
-	if _, err := ctrl.CreateOrUpdate(ctx, clusters.MCPCluster.Client(), managedObj, func() error {
-		managedObj.Spec = fooCRD().Spec
-		return nil
-	}); err != nil {
-		l.Error(err, "createOrUpdate failed")
-		return ctrl.Result{}, err
+	l.Info("Checking tenant namespace", "namespace", tenantNamespace)
+
+	if err = r.replicateImagePullSecret(ctx, providerConfig, tenantNamespace); err != nil {
+		spruntime.StatusFailed(svcobj, err.Error())
+		return ctrl.Result{}, fmt.Errorf("failed to replicate image pull secret: %w", err)
 	}
+
+	if err := r.createOrUpdateOCIRepository(ctx, svcobj, clusters, tenantNamespace, providerConfig); err != nil {
+		spruntime.StatusFailed(svcobj, err.Error())
+		return ctrl.Result{}, fmt.Errorf("failed to reconcile OCIRepository: %w", err)
+	}
+
+	if err := r.createOrUpdateHelmRelease(ctx, tenantNamespace, svcobj, providerConfig); err != nil {
+		spruntime.StatusFailed(svcobj, err.Error())
+		return ctrl.Result{}, fmt.Errorf("failed to reconcile HelmRelease: %w", err)
+	}
+	l.Info("Done Reconciling Kyverno resource", "name", svcobj.Name)
 	spruntime.StatusReady(svcobj)
 	return ctrl.Result{}, nil
 }
@@ -118,4 +148,151 @@ func fooCRD() *apiextensionsv1.CustomResourceDefinition {
 			},
 		},
 	}
+}
+
+func (r *KyvernoReconciler) replicateImagePullSecret(ctx context.Context, providerConfig *apiv1alpha1.ProviderConfig, targetNamespace string) error {
+	ref := providerConfig.GetImagePullSecretRef()
+	if ref == nil {
+		return nil
+	}
+	platformClient := r.PlatformCluster.Client()
+
+	sourceSecret := &corev1.Secret{}
+	sourceKey := client.ObjectKey{Name: ref.Name, Namespace: r.PodNamespace}
+
+	if err := platformClient.Get(ctx, sourceKey, sourceSecret); err != nil {
+		return fmt.Errorf("failed to get source image pull secret: %q from namespace %q: %w", ref.Name, r.PodNamespace, err)
+	}
+
+	targetSecret := &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      ref.Name,
+			Namespace: targetNamespace,
+		},
+	}
+	if _, err := ctrl.CreateOrUpdate(ctx, platformClient, targetSecret, func() error {
+		targetSecret.Data = sourceSecret.Data
+		targetSecret.Type = sourceSecret.Type
+		return nil
+	}); err != nil {
+		return fmt.Errorf("failed to replicate image pull secret: %q in namespace %q: %w", ref.Name, targetNamespace, err)
+	}
+	return nil
+}
+
+func (r *KyvernoReconciler) createOrUpdateOCIRepository(ctx context.Context, svcobj *apiv1alpha1.Kyverno, clusters spruntime.ClusterContext, namespace string, providerConfig *apiv1alpha1.ProviderConfig) error {
+	ociRepo := createOciRepository(providerConfig, svcobj.Spec.Version, namespace)
+	managedObj := &sourcev1.OCIRepository{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      ociRepo.Name,
+			Namespace: namespace,
+		},
+	}
+	l := logf.FromContext(ctx)
+	l.Info("Creating OCI Repository", "object", ociRepo)
+	if _, err := ctrl.CreateOrUpdate(ctx, r.PlatformCluster.Client(), managedObj, func() error {
+		managedObj.Spec = ociRepo.Spec
+		return nil
+	}); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func createOciRepository(providerConfig *apiv1alpha1.ProviderConfig, version string, namespace string) *sourcev1.OCIRepository {
+	var secretRef *meta.LocalObjectReference
+	if ref := providerConfig.GetImagePullSecretRef(); ref != nil {
+		secretRef = &meta.LocalObjectReference{
+			Name: ref.Name,
+		}
+	}
+	return &sourcev1.OCIRepository{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      OCIRepositoryName,
+			Namespace: namespace,
+		},
+		Spec: sourcev1.OCIRepositorySpec{
+			Interval:  metav1.Duration{Duration: time.Minute},
+			URL:       ensureOCIScheme(providerConfig.GetChartURL()),
+			SecretRef: secretRef,
+			Reference: &sourcev1.OCIRepositoryRef{
+				Tag: version,
+			},
+		},
+	}
+}
+func ensureOCIScheme(url string) string {
+	if !strings.HasPrefix(url, "oci://") {
+		return "oci://" + url
+	}
+	return url
+}
+
+func (r *KyvernoReconciler) createOrUpdateHelmRelease(ctx context.Context, namespace string, svcobj *apiv1alpha1.Kyverno, providerConfig *apiv1alpha1.ProviderConfig) error {
+	helmRelease, err := r.createHelmRelease(ctx, namespace, svcobj, providerConfig)
+	if err != nil {
+		return fmt.Errorf("failed to create HelmRelease object: %w", err)
+	}
+	managedObj := &helmv2.HelmRelease{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      helmRelease.Name,
+			Namespace: namespace,
+		},
+	}
+	l := logf.FromContext(ctx)
+	l.Info("Creating HelmRelease", "object", managedObj)
+	if _, err := ctrl.CreateOrUpdate(ctx, r.PlatformCluster.Client(), managedObj, func() error {
+		managedObj.Spec = helmRelease.Spec
+		return nil
+	}); err != nil {
+		return fmt.Errorf("failed to create or update HelmRelease: %w", err)
+	}
+	return nil
+}
+
+func (r *KyvernoReconciler) createHelmRelease(ctx context.Context, namespace string, svcobj *apiv1alpha1.Kyverno, providerConfig *apiv1alpha1.ProviderConfig) (*helmv2.HelmRelease, error) {
+	fluxConfigRef, err := r.getMcpFluxConfig(ctx, namespace, svcobj.Name)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get FluxConfig for MCP cluster: %w", err)
+	}
+	helmValues := providerConfig.GetValues()
+	remediationStrategy := helmv2.RollbackRemediationStrategy
+
+	return &helmv2.HelmRelease{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      HelmReleaseName,
+			Namespace: namespace,
+		},
+		Spec: helmv2.HelmReleaseSpec{
+			ReleaseName:      apiv1alpha1.GetReleaseName(svcobj.Name),
+			Interval:         metav1.Duration{Duration: time.Minute},
+			TargetNamespace:  OCMSystemNamespace,
+			StorageNamespace: OCMSystemNamespace,
+			Install: &helmv2.Install{
+				CRDs:            helmv2.Create,
+				CreateNamespace: true,
+				Remediation: &helmv2.InstallRemediation{
+					Retries: 3,
+				},
+			},
+			Upgrade: &helmv2.Upgrade{
+				CRDS:          helmv2.CreateReplace,
+				CleanupOnFail: true,
+				Remediation: &helmv2.UpgradeRemediation{
+					Retries:  3,
+					Strategy: &remediationStrategy,
+				},
+			},
+			ChartRef: &helmv2.CrossNamespaceSourceReference{
+				Kind:      "OCIRepository",
+				Name:      OCIRepositoryName,
+				Namespace: namespace,
+			},
+			Values: helmValues,
+			KubeConfig: &meta.KubeConfigReference{
+				SecretRef: fluxConfigRef,
+			},
+		},
+	}, nil
 }
