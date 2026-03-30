@@ -33,11 +33,10 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
-	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	helmv2 "github.com/fluxcd/helm-controller/api/v2"
 	sourcev1 "github.com/fluxcd/source-controller/api/v1"
-	apiv1alpha1 "github.com/open-component-model/service-provider-ocm/api/v1alpha1"
+	apiv1alpha1 "github.com/openmcp-project/service-provider-kyverno/api/v1alpha1"
 	spruntime "github.com/openmcp-project/service-provider-kyverno/pkg/spruntime"
 )
 
@@ -97,21 +96,38 @@ func (r *KyvernoReconciler) CreateOrUpdate(ctx context.Context, svcobj *apiv1alp
 }
 
 // Delete is called on every delete event
-func (r *KyvernoReconciler) Delete(ctx context.Context, obj *apiv1alpha1.Kyverno, _ *apiv1alpha1.ProviderConfig, clusters spruntime.ClusterContext) (ctrl.Result, error) {
-	l := logf.FromContext(ctx)
+func (r *KyvernoReconciler) Delete(ctx context.Context, obj *apiv1alpha1.Kyverno, providerConfig *apiv1alpha1.ProviderConfig, clusters spruntime.ClusterContext) (ctrl.Result, error) {
 	spruntime.StatusTerminating(obj)
-	managedObj := fooCRD()
-	if err := clusters.MCPCluster.Client().Delete(ctx, managedObj); client.IgnoreNotFound(err) != nil {
-		l.Error(err, "delete object failed")
-		return ctrl.Result{}, err
+	tenantNamespace, err := libutils.StableMCPNamespace(obj.Name, obj.Namespace)
+	if err != nil {
+		return ctrl.Result{}, fmt.Errorf("failed to determine stable namespace for Kyverno instance: %w", err)
 	}
-	if err := clusters.MCPCluster.Client().Get(ctx, client.ObjectKeyFromObject(managedObj), managedObj); err != nil {
-		return reconcile.Result{}, client.IgnoreNotFound(err)
+	var objects []client.Object
+	ociRepo := createOciRepository(providerConfig, obj.Spec.Version, tenantNamespace)
+	objects = append(objects, ociRepo)
+	helmRelease, err := r.createHelmRelease(ctx, tenantNamespace, obj, providerConfig)
+	if err != nil {
+		spruntime.StatusFailed(obj, err.Error())
+		return ctrl.Result{}, fmt.Errorf("failed to create helm release: %w", err)
 	}
-	// object still exists
-	return ctrl.Result{
-		RequeueAfter: time.Second * 10,
-	}, nil
+	objects = append(objects, helmRelease)
+	objectStillExists := false
+	for _, object := range objects {
+		if err := r.PlatformCluster.Client().Delete(ctx, object); client.IgnoreNotFound(err) == nil {
+			spruntime.StatusFailed(obj, err.Error())
+			return ctrl.Result{}, fmt.Errorf("delete object failed: %w", err)
+		}
+
+		if err := r.PlatformCluster.Client().Get(ctx, client.ObjectKeyFromObject(object), object); err != nil {
+			objectStillExists = true
+		}
+	}
+
+	if objectStillExists {
+		return ctrl.Result{RequeueAfter: time.Second * 10}, nil
+	}
+	spruntime.StatusReady(obj)
+	return ctrl.Result{}, nil
 }
 
 func fooCRD() *apiextensionsv1.CustomResourceDefinition {
@@ -279,7 +295,7 @@ func (r *KyvernoReconciler) createHelmRelease(ctx context.Context, namespace str
 				},
 			},
 			Upgrade: &helmv2.Upgrade{
-				CRDS:          helmv2.CreateReplace,
+				CRDs:          helmv2.CreateReplace,
 				CleanupOnFail: true,
 				Remediation: &helmv2.UpgradeRemediation{
 					Retries:  3,
