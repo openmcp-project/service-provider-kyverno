@@ -119,6 +119,7 @@ func (o *ProviderConfig) PollInterval() time.Duration {
 	return o.Spec.PollInterval.Duration
 }
 
+// GetImagePullSecretRef returns the image pull secret reference from the spec. Nil-safe.
 func (o *ProviderConfig) GetImagePullSecretRef() *corev1.LocalObjectReference {
 	if o == nil {
 		return nil
