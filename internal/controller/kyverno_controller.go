@@ -23,16 +23,17 @@ import (
 	"time"
 
 	"github.com/fluxcd/pkg/apis/meta"
+	"github.com/openmcp-project/controller-utils/pkg/clusters"
+	clustersv1alpha1 "github.com/openmcp-project/openmcp-operator/api/clusters/v1alpha1"
+	"github.com/openmcp-project/openmcp-operator/lib/clusteraccess"
 	libutils "github.com/openmcp-project/openmcp-operator/lib/utils"
 	corev1 "k8s.io/api/core/v1"
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/controller-runtime/pkg/reconcile"
-
-	"github.com/openmcp-project/controller-utils/pkg/clusters"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
+	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	helmv2 "github.com/fluxcd/helm-controller/api/v2"
 	sourcev1 "github.com/fluxcd/source-controller/api/v1"
@@ -295,5 +296,22 @@ func (r *KyvernoReconciler) createHelmRelease(ctx context.Context, namespace str
 				SecretRef: fluxConfigRef,
 			},
 		},
+	}, nil
+}
+
+func (r *KyvernoReconciler) getMcpFluxConfig(ctx context.Context, namespace string, objectName string) (*meta.SecretKeyReference, error) {
+	mcpAccessRequest := &clustersv1alpha1.AccessRequest{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      clusteraccess.StableRequestNameFromLocalName(clusterAccessName, objectName) + requestSuffixMCP,
+			Namespace: namespace,
+		},
+	}
+	if err := r.PlatformCluster.Client().Get(ctx, client.ObjectKeyFromObject(mcpAccessRequest), mcpAccessRequest); err != nil {
+		return nil, fmt.Errorf("failed to get MCP AccessRequest: %w", err)
+	}
+
+	return &meta.SecretKeyReference{
+		Name: mcpAccessRequest.Status.SecretRef.Name,
+		Key:  "kubeconfig",
 	}, nil
 }
