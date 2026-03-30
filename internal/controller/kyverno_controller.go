@@ -28,7 +28,6 @@ import (
 	"github.com/openmcp-project/openmcp-operator/lib/clusteraccess"
 	libutils "github.com/openmcp-project/openmcp-operator/lib/utils"
 	corev1 "k8s.io/api/core/v1"
-	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -36,16 +35,17 @@ import (
 
 	helmv2 "github.com/fluxcd/helm-controller/api/v2"
 	sourcev1 "github.com/fluxcd/source-controller/api/v1"
+
 	apiv1alpha1 "github.com/openmcp-project/service-provider-kyverno/api/v1alpha1"
 	spruntime "github.com/openmcp-project/service-provider-kyverno/pkg/spruntime"
 )
 
 const (
-	//HelmReleaseName is the name of the Helm release used to deploy Kyverno in the onboarding cluster.
+	// HelmReleaseName is the name of the Helm release used to deploy Kyverno in the onboarding cluster.
 	HelmReleaseName = "kyverno"
-	//OCIRepositoryName is the name of the OCI repository where the Kyverno Helm chart is stored.
+	// OCIRepositoryName is the name of the OCI repository where the Kyverno Helm chart is stored.
 	OCIRepositoryName = "oci://ghcr.io/openmcp-project/kyverno-chart"
-	//OCMSystemNamespace is the namespace in the onboarding cluster where Kyverno controller will be deployed.
+	// OCMSystemNamespace is the namespace in the onboarding cluster where Kyverno controller will be deployed.
 	OCMSystemNamespace = "openmcp-system"
 	// requestSuffixMCP is the suffix used for the mcp cluster.
 	requestSuffixMCP = "--mcp"
@@ -96,7 +96,7 @@ func (r *KyvernoReconciler) CreateOrUpdate(ctx context.Context, svcobj *apiv1alp
 }
 
 // Delete is called on every delete event
-func (r *KyvernoReconciler) Delete(ctx context.Context, obj *apiv1alpha1.Kyverno, providerConfig *apiv1alpha1.ProviderConfig, clusters spruntime.ClusterContext) (ctrl.Result, error) {
+func (r *KyvernoReconciler) Delete(ctx context.Context, obj *apiv1alpha1.Kyverno, providerConfig *apiv1alpha1.ProviderConfig, _ spruntime.ClusterContext) (ctrl.Result, error) {
 	spruntime.StatusTerminating(obj)
 	tenantNamespace, err := libutils.StableMCPNamespace(obj.Name, obj.Namespace)
 	if err != nil {
@@ -130,43 +130,43 @@ func (r *KyvernoReconciler) Delete(ctx context.Context, obj *apiv1alpha1.Kyverno
 	return ctrl.Result{}, nil
 }
 
-func fooCRD() *apiextensionsv1.CustomResourceDefinition {
-	return &apiextensionsv1.CustomResourceDefinition{
-		ObjectMeta: metav1.ObjectMeta{
-			Name: "foos.example.domain",
-		},
-		Spec: apiextensionsv1.CustomResourceDefinitionSpec{
-			Group: "example.domain",
-			Versions: []apiextensionsv1.CustomResourceDefinitionVersion{
-				{
-					Name:    "v1alpha1",
-					Served:  true,
-					Storage: true,
-					Schema: &apiextensionsv1.CustomResourceValidation{
-						OpenAPIV3Schema: &apiextensionsv1.JSONSchemaProps{
-							Type: "object",
-							Properties: map[string]apiextensionsv1.JSONSchemaProps{
-								"spec": {
-									Type: "object",
-									Properties: map[string]apiextensionsv1.JSONSchemaProps{
-										"foo": {Type: "string"},
-									},
-								},
-							},
-						},
-					},
-				},
-			},
-			Scope: apiextensionsv1.NamespaceScoped,
-			Names: apiextensionsv1.CustomResourceDefinitionNames{
-				Plural:   "foos",
-				Singular: "foo",
-				Kind:     "Foo",
-				ListKind: "FooList",
-			},
-		},
-	}
-}
+// func fooCRD() *apiextensionsv1.CustomResourceDefinition {
+// 	return &apiextensionsv1.CustomResourceDefinition{
+// 		ObjectMeta: metav1.ObjectMeta{
+// 			Name: "foos.example.domain",
+// 		},
+// 		Spec: apiextensionsv1.CustomResourceDefinitionSpec{
+// 			Group: "example.domain",
+// 			Versions: []apiextensionsv1.CustomResourceDefinitionVersion{
+// 				{
+// 					Name:    "v1alpha1",
+// 					Served:  true,
+// 					Storage: true,
+// 					Schema: &apiextensionsv1.CustomResourceValidation{
+// 						OpenAPIV3Schema: &apiextensionsv1.JSONSchemaProps{
+// 							Type: "object",
+// 							Properties: map[string]apiextensionsv1.JSONSchemaProps{
+// 								"spec": {
+// 									Type: "object",
+// 									Properties: map[string]apiextensionsv1.JSONSchemaProps{
+// 										"foo": {Type: "string"},
+// 									},
+// 								},
+// 							},
+// 						},
+// 					},
+// 				},
+// 			},
+// 			Scope: apiextensionsv1.NamespaceScoped,
+// 			Names: apiextensionsv1.CustomResourceDefinitionNames{
+// 				Plural:   "foos",
+// 				Singular: "foo",
+// 				Kind:     "Foo",
+// 				ListKind: "FooList",
+// 			},
+// 		},
+// 	}
+// }
 
 func (r *KyvernoReconciler) replicateImagePullSecret(ctx context.Context, providerConfig *apiv1alpha1.ProviderConfig, targetNamespace string) error {
 	ref := providerConfig.GetImagePullSecretRef()
@@ -198,7 +198,7 @@ func (r *KyvernoReconciler) replicateImagePullSecret(ctx context.Context, provid
 	return nil
 }
 
-func (r *KyvernoReconciler) createOrUpdateOCIRepository(ctx context.Context, svcobj *apiv1alpha1.Kyverno, clusters spruntime.ClusterContext, namespace string, providerConfig *apiv1alpha1.ProviderConfig) error {
+func (r *KyvernoReconciler) createOrUpdateOCIRepository(ctx context.Context, svcobj *apiv1alpha1.Kyverno, _ spruntime.ClusterContext, namespace string, providerConfig *apiv1alpha1.ProviderConfig) error {
 	ociRepo := createOciRepository(providerConfig, svcobj.Spec.Version, namespace)
 	managedObj := &sourcev1.OCIRepository{
 		ObjectMeta: metav1.ObjectMeta{
