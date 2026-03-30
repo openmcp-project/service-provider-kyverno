@@ -20,11 +20,12 @@ import (
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
+	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 // DefaultChartURL points to the default location of where the ocm-k8s-toolkit chart lives.
-const DefaultChartURL = "ghcr.io/open-component-model/kubernetes/controller/chart"
+const DefaultChartURL = "ghcr.io/kyverno/kyverno"
 
 // NOTE: json tags are required.  Any new fields you add must have json tags for the fields to be serialized.
 
@@ -40,6 +41,10 @@ type ProviderConfigSpec struct {
 	// +kubebuilder:default:="1m"
 	// +kubebuilder:validation:Format=duration
 	PollInterval *metav1.Duration `json:"pollInterval,omitempty"`
+
+	// Values are arbitrary Helm values passed directly to the managed HelmRelease.
+	// +optional
+	Values *apiextensionsv1.JSON `json:"values,omitempty"`
 
 	// ChartURL is the OCI URL of the Helm chart. Defaults to the official kyverno chart.
 	// +optional
@@ -127,4 +132,12 @@ func (o *ProviderConfig) GetChartURL() string {
 		return DefaultChartURL
 	}
 	return o.Spec.ChartURL
+}
+
+// GetValues returns the Helm values or nil if unset. Nil-safe.
+func (o *ProviderConfig) GetValues() *apiextensionsv1.JSON {
+	if o == nil {
+		return nil
+	}
+	return o.Spec.Values
 }

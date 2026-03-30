@@ -33,6 +33,8 @@ type KyvernoSpec struct {
 	// foo is an example field of Kyverno. Edit kyverno_types.go to remove/update
 	// +optional
 	Foo *string `json:"foo,omitempty"`
+	// +kubebuilder:validation:Required
+	Version string `json:"version"`
 }
 
 // KyvernoStatus defines the observed state of Kyverno.
