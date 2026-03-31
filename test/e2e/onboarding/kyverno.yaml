@@ -3,4 +3,4 @@ kind: Kyverno
 metadata:
   name: test-mcp
 spec:
-  foo: bar
+  version: "3.3.4"
