@@ -48,10 +48,10 @@ spec:
           spec:
             description: spec defines the desired state of Kyverno
             properties:
-              foo:
-                description: foo is an example field of Kyverno. Edit kyverno_types.go
-                  to remove/update
+              version:
                 type: string
+            required:
+            - version
             type: object
           status:
             description: status defines the observed state of Kyverno
