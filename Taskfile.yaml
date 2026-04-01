@@ -35,7 +35,7 @@ tasks:
     desc: "Clean up any leftover kind clusters from e2e tests"
     cmds:
       - |
-        for cluster in $(kind get clusters | grep -E "^(platform|onboarding)"); do
+        for cluster in $(kind get clusters | grep -E "^(platform|onboarding|mcp)"); do
           echo "Deleting kind cluster: $cluster"
           kind delete cluster --name "$cluster"
         done
