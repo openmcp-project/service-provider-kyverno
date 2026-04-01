@@ -44,9 +44,9 @@ const (
 	// HelmReleaseName is the name of the Helm release used to deploy Kyverno in the onboarding cluster.
 	HelmReleaseName = "kyverno"
 	// OCIRepositoryName is the name of the OCI repository where the Kyverno Helm chart is stored.
-	OCIRepositoryName = "oci://ghcr.io/openmcp-project/kyverno-chart"
-	// OCMSystemNamespace is the namespace in the onboarding cluster where Kyverno controller will be deployed.
-	OCMSystemNamespace = "openmcp-system"
+	OCIRepositoryName = "kyverno"
+	// OCPLSystemNamespace is the namespace in the onboarding cluster where Kyverno controller will be deployed.
+	OCPLSystemNamespace = "openmcp-system"
 	// requestSuffixMCP is the suffix used for the mcp cluster.
 	requestSuffixMCP = "--mcp"
 )
@@ -285,8 +285,8 @@ func (r *KyvernoReconciler) createHelmRelease(ctx context.Context, namespace str
 		Spec: helmv2.HelmReleaseSpec{
 			ReleaseName:      apiv1alpha1.GetReleaseName(svcobj.Name),
 			Interval:         metav1.Duration{Duration: time.Minute},
-			TargetNamespace:  OCMSystemNamespace,
-			StorageNamespace: OCMSystemNamespace,
+			TargetNamespace:  OCPLSystemNamespace,
+			StorageNamespace: OCPLSystemNamespace,
 			Install: &helmv2.Install{
 				CRDs:            helmv2.Create,
 				CreateNamespace: true,
