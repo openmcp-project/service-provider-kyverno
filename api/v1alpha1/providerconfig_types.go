@@ -25,7 +25,7 @@ import (
 )
 
 // DefaultChartURL points to the default location of where the ocm-k8s-toolkit chart lives.
-const DefaultChartURL = "ghcr.io/kyverno/kyverno"
+const DefaultChartURL = "ghcr.io/kyverno/charts"
 
 // NOTE: json tags are required.  Any new fields you add must have json tags for the fields to be serialized.
 
