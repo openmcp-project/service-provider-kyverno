@@ -96,7 +96,7 @@ func (r *KyvernoReconciler) CreateOrUpdate(ctx context.Context, svcobj *apiv1alp
 }
 
 // reconcileHelmReleaseStatus fetches the HelmRelease and reflects its condition onto the Kyverno status.
-// It implements a circuit breaker: after helmReleaseMaxFailures consecutive failures, it stops requeueing.
+// It implements a circuit breaker: after helmReleaseMaxFailures consecutive failures, it stops.
 func (r *KyvernoReconciler) reconcileHelmReleaseStatus(ctx context.Context, svcobj *apiv1alpha1.Kyverno, tenantNamespace string) (ctrl.Result, error) {
 	hr := &helmv2.HelmRelease{}
 	if err := r.PlatformCluster.Client().Get(ctx, client.ObjectKey{
@@ -132,7 +132,7 @@ func (r *KyvernoReconciler) applyHelmReleaseCondition(svcobj *apiv1alpha1.Kyvern
 	}
 }
 
-// handleHelmReleaseFailure increments the failure counter and either requeues or gives up.
+// handleHelmReleaseFailure increments the failure counter.
 func (r *KyvernoReconciler) handleHelmReleaseFailure(svcobj *apiv1alpha1.Kyverno, message string) (ctrl.Result, error) {
 	svcobj.Status.HelmReleaseFailureCount++
 	if svcobj.Status.HelmReleaseFailureCount >= helmReleaseMaxFailures {
@@ -140,7 +140,7 @@ func (r *KyvernoReconciler) handleHelmReleaseFailure(svcobj *apiv1alpha1.Kyverno
 			"HelmRelease failed %d times, giving up: %s",
 			svcobj.Status.HelmReleaseFailureCount, message,
 		))
-		return ctrl.Result{}, nil // no requeue — needs human intervention
+		return ctrl.Result{}, nil
 	}
 	spruntime.StatusFailed(svcobj, fmt.Sprintf(
 		"HelmRelease failed (attempt %d/%d): %s",
@@ -170,21 +170,11 @@ func (r *KyvernoReconciler) Delete(ctx context.Context, obj *apiv1alpha1.Kyverno
 	}
 	objects = append(objects, hr)
 
-	objectStillExists := false
 	for _, object := range objects {
 		if err := r.PlatformCluster.Client().Delete(ctx, object); client.IgnoreNotFound(err) != nil {
 			spruntime.StatusFailed(obj, err.Error())
 			return ctrl.Result{}, fmt.Errorf("delete object failed: %w", err)
 		}
-		if err := r.PlatformCluster.Client().Get(ctx, client.ObjectKeyFromObject(object), object); client.IgnoreNotFound(err) != nil {
-			return ctrl.Result{}, fmt.Errorf("failed to check object existence: %w", err)
-		} else if err == nil {
-			objectStillExists = true
-		}
-	}
-
-	if objectStillExists {
-		return ctrl.Result{}, nil
 	}
 	return ctrl.Result{}, nil
 }
