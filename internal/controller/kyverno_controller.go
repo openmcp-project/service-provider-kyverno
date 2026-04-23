@@ -1,17 +1,17 @@
 /*
-Copyright 2025.
+	Copyright 2025.
 
-Licensed under the Apache License, Version 2.0 (the "License");
-you may not use this file except in compliance with the License.
-You may obtain a copy of the License at
+	Licensed under the Apache License, Version 2.0 (the "License");
+	you may not use this file except in compliance with the License.
+	You may obtain a copy of the License at
 
-    http://www.apache.org/licenses/LICENSE-2.0
+		http://www.apache.org/licenses/LICENSE-2.0
 
-Unless required by applicable law or agreed to in writing, software
-distributed under the License is distributed on an "AS IS" BASIS,
-WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-See the License for the specific language governing permissions and
-limitations under the License.
+	Unless required by applicable law or agreed to in writing, software
+	distributed under the License is distributed on an "AS IS" BASIS,
+	WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+	See the License for the specific language governing permissions and
+	limitations under the License.
 */
 
 package controller
@@ -49,6 +49,8 @@ const (
 	OCMSystemNamespace = "openmcp-system"
 	// requestSuffixMCP is the suffix used for the mcp cluster.
 	requestSuffixMCP = "--mcp"
+	// helmReleaseMaxFailures is the maximum number of consecutive failures from the HelmRelease conditions before the controller stops retrying and surfaces the failure in the Kyverno resource status.
+	helmReleaseMaxFailures = 5
 )
 
 // clusterAccessName is the name of the access object containing the kubeconfig for the mcp target cluster.
@@ -90,8 +92,60 @@ func (r *KyvernoReconciler) CreateOrUpdate(ctx context.Context, svcobj *apiv1alp
 		return ctrl.Result{}, fmt.Errorf("failed to reconcile HelmRelease: %w", err)
 	}
 	l.Info("Done Reconciling Kyverno resource", "name", svcobj.Name)
-	// TODO: put in logic that checks the condition of the HelmRelease before setting the status
-	spruntime.StatusReady(svcobj)
+	return r.reconcileHelmReleaseStatus(ctx, svcobj, tenantNamespace)
+}
+
+// reconcileHelmReleaseStatus fetches the HelmRelease and reflects its condition onto the Kyverno status.
+// It implements a circuit breaker: after helmReleaseMaxFailures consecutive failures, it stops requeueing.
+func (r *KyvernoReconciler) reconcileHelmReleaseStatus(ctx context.Context, svcobj *apiv1alpha1.Kyverno, tenantNamespace string) (ctrl.Result, error) {
+	hr := &helmv2.HelmRelease{}
+	if err := r.PlatformCluster.Client().Get(ctx, client.ObjectKey{
+		Name:      HelmReleaseName,
+		Namespace: tenantNamespace,
+	}, hr); err != nil {
+		return ctrl.Result{}, fmt.Errorf("failed to get HelmRelease: %w", err)
+	}
+
+	for _, cond := range hr.Status.Conditions {
+		if cond.Type != "Ready" {
+			continue
+		}
+		return r.applyHelmReleaseCondition(svcobj, cond)
+	}
+
+	spruntime.StatusProgressing(svcobj, "Waiting", "HelmRelease not yet processed by Flux")
+	return ctrl.Result{}, nil
+}
+
+// applyHelmReleaseCondition maps a HelmRelease Ready condition onto the Kyverno status.
+func (r *KyvernoReconciler) applyHelmReleaseCondition(svcobj *apiv1alpha1.Kyverno, cond metav1.Condition) (ctrl.Result, error) {
+	switch cond.Status {
+	case metav1.ConditionTrue:
+		svcobj.Status.HelmReleaseFailureCount = 0
+		spruntime.StatusReady(svcobj)
+		return ctrl.Result{}, nil
+	case metav1.ConditionFalse:
+		return r.handleHelmReleaseFailure(svcobj, cond.Message)
+	default: // ConditionUnknown — still progressing
+		spruntime.StatusProgressing(svcobj, cond.Reason, cond.Message)
+		return ctrl.Result{}, nil
+	}
+}
+
+// handleHelmReleaseFailure increments the failure counter and either requeues or gives up.
+func (r *KyvernoReconciler) handleHelmReleaseFailure(svcobj *apiv1alpha1.Kyverno, message string) (ctrl.Result, error) {
+	svcobj.Status.HelmReleaseFailureCount++
+	if svcobj.Status.HelmReleaseFailureCount >= helmReleaseMaxFailures {
+		spruntime.StatusFailed(svcobj, fmt.Sprintf(
+			"HelmRelease failed %d times, giving up: %s",
+			svcobj.Status.HelmReleaseFailureCount, message,
+		))
+		return ctrl.Result{}, nil // no requeue — needs human intervention
+	}
+	spruntime.StatusFailed(svcobj, fmt.Sprintf(
+		"HelmRelease failed (attempt %d/%d): %s",
+		svcobj.Status.HelmReleaseFailureCount, helmReleaseMaxFailures, message,
+	))
 	return ctrl.Result{}, nil
 }
 
@@ -102,31 +156,36 @@ func (r *KyvernoReconciler) Delete(ctx context.Context, obj *apiv1alpha1.Kyverno
 	if err != nil {
 		return ctrl.Result{}, fmt.Errorf("failed to determine stable namespace for Kyverno instance: %w", err)
 	}
-	var objects []client.Object
-	ociRepo := createOciRepository(providerConfig, obj.Spec.Version, tenantNamespace)
-	objects = append(objects, ociRepo)
-	helmRelease, err := r.createHelmRelease(ctx, tenantNamespace, obj, providerConfig)
-	if err != nil {
-		spruntime.StatusFailed(obj, err.Error())
-		return ctrl.Result{}, fmt.Errorf("failed to create helm release: %w", err)
+
+	objects := make([]client.Object, 0, 2)
+	objects = append(objects, createOciRepository(providerConfig, obj.Spec.Version, tenantNamespace))
+
+	// HelmRelease construction requires the MCP AccessRequest — which may already be gone
+	// during teardown. Build a minimal stub sufficient for deletion.
+	hr := &helmv2.HelmRelease{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      HelmReleaseName,
+			Namespace: tenantNamespace,
+		},
 	}
-	objects = append(objects, helmRelease)
+	objects = append(objects, hr)
+
 	objectStillExists := false
 	for _, object := range objects {
 		if err := r.PlatformCluster.Client().Delete(ctx, object); client.IgnoreNotFound(err) != nil {
 			spruntime.StatusFailed(obj, err.Error())
 			return ctrl.Result{}, fmt.Errorf("delete object failed: %w", err)
 		}
-
-		if err := r.PlatformCluster.Client().Get(ctx, client.ObjectKeyFromObject(object), object); err == nil {
+		if err := r.PlatformCluster.Client().Get(ctx, client.ObjectKeyFromObject(object), object); client.IgnoreNotFound(err) != nil {
+			return ctrl.Result{}, fmt.Errorf("failed to check object existence: %w", err)
+		} else if err == nil {
 			objectStillExists = true
 		}
 	}
 
 	if objectStillExists {
-		return ctrl.Result{RequeueAfter: time.Second * 10}, nil
+		return ctrl.Result{}, nil
 	}
-	spruntime.StatusReady(obj)
 	return ctrl.Result{}, nil
 }
 

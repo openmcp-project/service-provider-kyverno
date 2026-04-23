@@ -59,6 +59,10 @@ type KyvernoStatus struct {
 	ObservedGeneration int64 `json:"observedGeneration"`
 	// Phase is the current phase of the resource.
 	Phase string `json:"phase"`
+	// HelmReleaseFailureCount tracks the number of consecutive times the HelmRelease
+	// reported a failed condition. The controller will stop retrying after a fixed threshold.
+	// +optional
+	HelmReleaseFailureCount int `json:"helmReleaseFailureCount,omitempty"`
 }
 
 // Kyverno is the Schema for the kyvernos API
