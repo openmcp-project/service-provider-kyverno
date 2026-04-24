@@ -125,6 +125,11 @@ spec:
                 x-kubernetes-list-map-keys:
                 - type
                 x-kubernetes-list-type: map
+              helmReleaseFailureCount:
+                description: |-
+                  HelmReleaseFailureCount tracks the number of consecutive times the HelmRelease
+                  reported a failed condition. The controller will stop retrying after a fixed threshold.
+                type: integer
               observedGeneration:
                 description: ObservedGeneration is the generation of this resource
                   that was last reconciled by the controller.

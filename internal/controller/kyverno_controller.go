@@ -35,8 +35,11 @@ import (
 
 	helmv2 "github.com/fluxcd/helm-controller/api/v2"
 	sourcev1 "github.com/fluxcd/source-controller/api/v1"
+	apimeta "k8s.io/apimachinery/pkg/api/meta"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 
 	apiv1alpha1 "github.com/openmcp-project/service-provider-kyverno/api/v1alpha1"
+	internalstatus "github.com/openmcp-project/service-provider-kyverno/internal/status"
 	spruntime "github.com/openmcp-project/service-provider-kyverno/pkg/spruntime"
 )
 
@@ -150,14 +153,28 @@ func (r *KyvernoReconciler) handleHelmReleaseFailure(svcobj *apiv1alpha1.Kyverno
 }
 
 // Delete is called on every delete event
-func (r *KyvernoReconciler) Delete(ctx context.Context, obj *apiv1alpha1.Kyverno, providerConfig *apiv1alpha1.ProviderConfig, _ spruntime.ClusterContext) (ctrl.Result, error) {
+func (r *KyvernoReconciler) Delete(ctx context.Context, obj *apiv1alpha1.Kyverno, providerConfig *apiv1alpha1.ProviderConfig, clusterCtx spruntime.ClusterContext) (ctrl.Result, error) {
 	spruntime.StatusTerminating(obj)
 	tenantNamespace, err := libutils.StableMCPNamespace(obj.Name, obj.Namespace)
 	if err != nil {
 		return ctrl.Result{}, fmt.Errorf("failed to determine stable namespace for Kyverno instance: %w", err)
 	}
 
+	// block deletion if domain objects still exist in the cluster
+	if clusterCtx.MCPCluster != nil {
+		blocked, err := r.kyvernoDomainObjectsExist(ctx, clusterCtx.MCPCluster.Client())
+		if err != nil {
+			return ctrl.Result{}, err
+		}
+		if blocked {
+			internalstatus.ConditionsTerminatingFailed(obj, "deletion blocked until domain objects are removed")
+			return ctrl.Result{RequeueAfter: 10 * time.Second}, nil
+		}
+	}
+	//TODO: add error if not existing
+
 	objects := make([]client.Object, 0, 2)
+	// TODO: replace with stub
 	objects = append(objects, createOciRepository(providerConfig, obj.Spec.Version, tenantNamespace))
 
 	// HelmRelease construction requires the MCP AccessRequest — which may already be gone
@@ -176,7 +193,32 @@ func (r *KyvernoReconciler) Delete(ctx context.Context, obj *apiv1alpha1.Kyverno
 			return ctrl.Result{}, fmt.Errorf("delete object failed: %w", err)
 		}
 	}
+	//TODO: actually wait for successful deletion instead of just requeueing with a fixed delay
 	return ctrl.Result{}, nil
+}
+
+// kyvernoDomainObjectsExist reports whether any Kyverno ClusterPolicy or Policy resources
+// exist in the target cluster, blocking deletion until they are removed.
+func (r *KyvernoReconciler) kyvernoDomainObjectsExist(ctx context.Context, cl client.Client) (bool, error) {
+	// move somewhere generic
+	for _, apiVersionKind := range [][2]string{
+		{"kyverno.io/v1", "ClusterPolicyList"},
+		{"kyverno.io/v1", "PolicyList"},
+	} {
+		list := &unstructured.UnstructuredList{}
+		list.SetAPIVersion(apiVersionKind[0])
+		list.SetKind(apiVersionKind[1])
+		if err := cl.List(ctx, list); err != nil {
+			if apimeta.IsNoMatchError(err) {
+				continue
+			}
+			return false, fmt.Errorf("failed to list %s: %w", apiVersionKind[1], err)
+		}
+		if len(list.Items) > 0 {
+			return true, nil
+		}
+	}
+	return false, nil
 }
 
 func (r *KyvernoReconciler) replicateImagePullSecret(ctx context.Context, providerConfig *apiv1alpha1.ProviderConfig, targetNamespace string) error {
