@@ -173,13 +173,12 @@ func (r *KyvernoReconciler) Delete(ctx context.Context, obj *apiv1alpha1.Kyverno
 			return ctrl.Result{RequeueAfter: 10 * time.Second}, nil
 		}
 	}
-	//TODO: add error if not existing
+	if clusterCtx.MCPCluster == nil {
+		panic("MCP cluster context is nil, expected it to be set in Delete()")
+	}
 
 	objects := make([]client.Object, 0, 2)
 	objects = append(objects, flux.OciRepositoryRef(OCIRepositoryName, tenantNamespace))
-
-	// HelmRelease construction requires the MCP AccessRequest — which may already be gone
-	// during teardown. Build a minimal stub sufficient for deletion.
 	objects = append(objects, flux.HelmReleaseRef(HelmReleaseName, tenantNamespace))
 
 	for _, object := range objects {
