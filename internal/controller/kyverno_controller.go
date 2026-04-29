@@ -19,7 +19,6 @@ package controller
 import (
 	"context"
 	"fmt"
-	"strings"
 	"time"
 
 	"github.com/fluxcd/pkg/apis/meta"
@@ -39,6 +38,7 @@ import (
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 
 	apiv1alpha1 "github.com/openmcp-project/service-provider-kyverno/api/v1alpha1"
+	"github.com/openmcp-project/service-provider-kyverno/internal/flux"
 	internalstatus "github.com/openmcp-project/service-provider-kyverno/internal/status"
 	spruntime "github.com/openmcp-project/service-provider-kyverno/pkg/spruntime"
 )
@@ -152,9 +152,11 @@ func (r *KyvernoReconciler) handleHelmReleaseFailure(svcobj *apiv1alpha1.Kyverno
 	return ctrl.Result{}, nil
 }
 
-// Delete is called on every delete event
+// Delete is called in reconciliation when the Kyverno resource is marked for deletion
 func (r *KyvernoReconciler) Delete(ctx context.Context, obj *apiv1alpha1.Kyverno, providerConfig *apiv1alpha1.ProviderConfig, clusterCtx spruntime.ClusterContext) (ctrl.Result, error) {
+	// mark for deletion
 	spruntime.StatusTerminating(obj)
+
 	tenantNamespace, err := libutils.StableMCPNamespace(obj.Name, obj.Namespace)
 	if err != nil {
 		return ctrl.Result{}, fmt.Errorf("failed to determine stable namespace for Kyverno instance: %w", err)
@@ -175,7 +177,7 @@ func (r *KyvernoReconciler) Delete(ctx context.Context, obj *apiv1alpha1.Kyverno
 
 	objects := make([]client.Object, 0, 2)
 	// TODO: replace with stub
-	objects = append(objects, createOciRepository(providerConfig, obj.Spec.Version, tenantNamespace))
+	objects = append(objects, flux.CreateOciRepository(providerConfig.GetChartURL(), obj.Spec.Version, OCIRepositoryName, tenantNamespace))
 
 	// HelmRelease construction requires the MCP AccessRequest — which may already be gone
 	// during teardown. Build a minimal stub sufficient for deletion.
@@ -252,7 +254,7 @@ func (r *KyvernoReconciler) replicateImagePullSecret(ctx context.Context, provid
 }
 
 func (r *KyvernoReconciler) createOrUpdateOciRepository(ctx context.Context, svcobj *apiv1alpha1.Kyverno, _ spruntime.ClusterContext, namespace string, providerConfig *apiv1alpha1.ProviderConfig) error {
-	ociRepo := createOciRepository(providerConfig, svcobj.Spec.Version, namespace)
+	ociRepo := flux.CreateOciRepository(providerConfig.GetChartURL(), svcobj.Spec.Version, OCIRepositoryName, namespace)
 	managedObj := &sourcev1.OCIRepository{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      ociRepo.Name,
@@ -271,37 +273,23 @@ func (r *KyvernoReconciler) createOrUpdateOciRepository(ctx context.Context, svc
 	return nil
 }
 
-func createOciRepository(providerConfig *apiv1alpha1.ProviderConfig, version string, namespace string) *sourcev1.OCIRepository {
-	return &sourcev1.OCIRepository{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      OCIRepositoryName,
-			Namespace: namespace,
-		},
-		Spec: sourcev1.OCIRepositorySpec{
-			Interval: metav1.Duration{Duration: time.Minute},
-			URL:      ensureOCIScheme(providerConfig.GetChartURL()),
-			LayerSelector: &sourcev1.OCILayerSelector{
-				MediaType: "application/vnd.cncf.helm.chart.content.v1.tar+gzip",
-				Operation: sourcev1.OCILayerCopy,
-			},
-			Reference: &sourcev1.OCIRepositoryRef{
-				Tag: version,
-			},
-		},
-	}
-}
-func ensureOCIScheme(url string) string {
-	if !strings.HasPrefix(url, "oci://") {
-		return "oci://" + url
-	}
-	return url
-}
-
 func (r *KyvernoReconciler) createOrUpdateHelmRelease(ctx context.Context, namespace string, svcobj *apiv1alpha1.Kyverno, providerConfig *apiv1alpha1.ProviderConfig) error {
-	helmRelease, err := r.createHelmRelease(ctx, namespace, svcobj, providerConfig)
+	fluxConfigRef, err := r.getMcpFluxConfig(ctx, namespace, svcobj.Name)
 	if err != nil {
-		return fmt.Errorf("failed to create HelmRelease object: %w", err)
+		return fmt.Errorf("failed to get FluxConfig for MCP cluster: %w", err)
 	}
+
+	helmRelease := flux.CreateHelmRelease(flux.HelmReleaseParams{
+		Name:             HelmReleaseName,
+		Namespace:        namespace,
+		ReleaseName:      apiv1alpha1.GetReleaseName(svcobj.Name),
+		TargetNamespace:  OCMSystemNamespace,
+		StorageNamespace: OCMSystemNamespace,
+		OCIRepoName:      OCIRepositoryName,
+		OCIRepoNamespace: namespace,
+		Values:           providerConfig.GetValues(),
+		KubeConfigRef:    fluxConfigRef,
+	})
 	managedObj := &helmv2.HelmRelease{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      helmRelease.Name,
@@ -317,53 +305,6 @@ func (r *KyvernoReconciler) createOrUpdateHelmRelease(ctx context.Context, names
 		return fmt.Errorf("failed to create or update HelmRelease: %w", err)
 	}
 	return nil
-}
-
-func (r *KyvernoReconciler) createHelmRelease(ctx context.Context, namespace string, svcobj *apiv1alpha1.Kyverno, providerConfig *apiv1alpha1.ProviderConfig) (*helmv2.HelmRelease, error) {
-	fluxConfigRef, err := r.getMcpFluxConfig(ctx, namespace, svcobj.Name)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get FluxConfig for MCP cluster: %w", err)
-	}
-	helmValues := providerConfig.GetValues()
-	remediationStrategy := helmv2.RollbackRemediationStrategy
-
-	return &helmv2.HelmRelease{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      HelmReleaseName,
-			Namespace: namespace,
-		},
-		Spec: helmv2.HelmReleaseSpec{
-			ReleaseName:      apiv1alpha1.GetReleaseName(svcobj.Name),
-			Interval:         metav1.Duration{Duration: time.Minute},
-			TargetNamespace:  OCMSystemNamespace,
-			StorageNamespace: OCMSystemNamespace,
-			Install: &helmv2.Install{
-				CRDs:            helmv2.Create,
-				CreateNamespace: true,
-				Remediation: &helmv2.InstallRemediation{
-					Retries: 3,
-				},
-			},
-			Upgrade: &helmv2.Upgrade{
-				CRDs:          helmv2.CreateReplace,
-				CleanupOnFail: true,
-				Remediation: &helmv2.UpgradeRemediation{
-					Retries:  3,
-					Strategy: &remediationStrategy,
-				},
-			},
-			ChartRef: &helmv2.CrossNamespaceSourceReference{
-				Kind:      "OCIRepository",
-				Name:      OCIRepositoryName,
-				Namespace: namespace,
-			},
-
-			Values: helmValues,
-			KubeConfig: &meta.KubeConfigReference{
-				SecretRef: fluxConfigRef,
-			},
-		},
-	}, nil
 }
 
 func (r *KyvernoReconciler) getMcpFluxConfig(ctx context.Context, namespace string, objectName string) (*meta.SecretKeyReference, error) {
