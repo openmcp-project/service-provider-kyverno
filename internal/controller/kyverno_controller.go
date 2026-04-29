@@ -176,18 +176,11 @@ func (r *KyvernoReconciler) Delete(ctx context.Context, obj *apiv1alpha1.Kyverno
 	//TODO: add error if not existing
 
 	objects := make([]client.Object, 0, 2)
-	// TODO: replace with stub
-	objects = append(objects, flux.CreateOciRepository(providerConfig.GetChartURL(), obj.Spec.Version, OCIRepositoryName, tenantNamespace))
+	objects = append(objects, flux.OciRepositoryRef(OCIRepositoryName, tenantNamespace))
 
 	// HelmRelease construction requires the MCP AccessRequest — which may already be gone
 	// during teardown. Build a minimal stub sufficient for deletion.
-	hr := &helmv2.HelmRelease{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      HelmReleaseName,
-			Namespace: tenantNamespace,
-		},
-	}
-	objects = append(objects, hr)
+	objects = append(objects, flux.HelmReleaseRef(HelmReleaseName, tenantNamespace))
 
 	for _, object := range objects {
 		if err := r.PlatformCluster.Client().Delete(ctx, object); client.IgnoreNotFound(err) != nil {

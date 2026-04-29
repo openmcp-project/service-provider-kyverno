@@ -110,3 +110,23 @@ func CreateHelmRelease(p HelmReleaseParams) *helmv2.HelmRelease {
 		},
 	}
 }
+
+// OciRepositoryRef returns a minimal OCIRepository stub for kubeclient requests (only ObjectMeta is set).
+func OciRepositoryRef(name, namespace string) *sourcev1.OCIRepository {
+	return &sourcev1.OCIRepository{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      name,
+			Namespace: namespace,
+		},
+	}
+}
+
+// HelmReleaseRef returns a minimal HelmRelease stub for kubeclient requests (only ObjectMeta is set).
+func HelmReleaseRef(name, namespace string) *helmv2.HelmRelease {
+	return &helmv2.HelmRelease{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      name,
+			Namespace: namespace,
+		},
+	}
+}
