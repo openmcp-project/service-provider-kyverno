@@ -177,11 +177,7 @@ func (r *KyvernoReconciler) Delete(ctx context.Context, obj *apiv1alpha1.Kyverno
 		panic("MCP cluster context is nil, expected it to be set in Delete()")
 	}
 
-	objects := make([]client.Object, 0, 2)
-	objects = append(objects, flux.OciRepositoryRef(OCIRepositoryName, tenantNamespace))
-	objects = append(objects, flux.HelmReleaseRef(HelmReleaseName, tenantNamespace))
-
-	for _, object := range objects {
+	for _, object := range fluxObjectsForDeletion(tenantNamespace) {
 		if err := r.PlatformCluster.Client().Delete(ctx, object); client.IgnoreNotFound(err) != nil {
 			spruntime.StatusFailed(obj, err.Error())
 			return ctrl.Result{}, fmt.Errorf("delete object failed: %w", err)
@@ -189,6 +185,15 @@ func (r *KyvernoReconciler) Delete(ctx context.Context, obj *apiv1alpha1.Kyverno
 	}
 	//TODO: actually wait for successful deletion instead of just requeueing with a fixed delay
 	return ctrl.Result{}, nil
+}
+
+// fluxObjectsForDeletion returns the flux resources that should be cleaned up
+// when a Kyverno instance is deleted.
+func fluxObjectsForDeletion(namespace string) []client.Object {
+	return []client.Object{
+		flux.OciRepositoryRef(OCIRepositoryName, namespace),
+		flux.HelmReleaseRef(HelmReleaseName, namespace),
+	}
 }
 
 // kyvernoDomainObjectsExist reports whether any Kyverno ClusterPolicy or Policy resources
