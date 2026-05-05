@@ -153,7 +153,7 @@ func (r *KyvernoReconciler) handleHelmReleaseFailure(svcobj *apiv1alpha1.Kyverno
 }
 
 // Delete is called in reconciliation when the Kyverno resource is marked for deletion
-func (r *KyvernoReconciler) Delete(ctx context.Context, obj *apiv1alpha1.Kyverno, providerConfig *apiv1alpha1.ProviderConfig, clusterCtx spruntime.ClusterContext) (ctrl.Result, error) {
+func (r *KyvernoReconciler) Delete(ctx context.Context, obj *apiv1alpha1.Kyverno, _ *apiv1alpha1.ProviderConfig, clusterCtx spruntime.ClusterContext) (ctrl.Result, error) {
 	// mark for deletion
 	spruntime.StatusTerminating(obj)
 
