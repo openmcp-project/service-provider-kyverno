@@ -3,23 +3,30 @@ apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
   annotations:
-    controller-gen.kubebuilder.io/version: v0.18.0
+    controller-gen.kubebuilder.io/version: v0.20.1
   labels:
-    openmcp.cloud/cluster: platform
-  name: providerconfigs.{{.Group}}.services.openmcp.cloud
+    openmcp.cloud/cluster: onboarding
+  name: kyvernoes.kyverno.services.openmcp.cloud
 spec:
-  group: {{.Group}}.services.openmcp.cloud
+  group: kyverno.services.openmcp.cloud
   names:
-    kind: ProviderConfig
-    listKind: ProviderConfigList
-    plural: providerconfigs
-    singular: providerconfig
-  scope: Cluster
+    kind: Kyverno
+    listKind: KyvernoList
+    plural: kyvernoes
+    singular: kyverno
+  scope: Namespaced
   versions:
-  - name: v1alpha1
+  - additionalPrinterColumns:
+    - jsonPath: .status.phase
+      name: Phase
+      type: string
+    - jsonPath: .metadata.creationTimestamp
+      name: Age
+      type: date
+    name: v1alpha1
     schema:
       openAPIV3Schema:
-        description: ProviderConfig is the Schema for the providerconfigs API
+        description: Kyverno is the Schema for the kyvernos API
         properties:
           apiVersion:
             description: |-
@@ -39,21 +46,19 @@ spec:
           metadata:
             type: object
           spec:
-            description: spec defines the desired state of ProviderConfig
+            description: spec defines the desired state of Kyverno
             properties:
-              pollInterval:
-                default: 1m
-                description: pollInterval is an example field of ProviderConfig. Edit providerconfig_types.go
-                  to remove/update
-                format: duration
+              version:
                 type: string
+            required:
+            - version
             type: object
           status:
-            description: status defines the observed state of ProviderConfig
+            description: status defines the observed state of Kyverno
             properties:
               conditions:
                 description: |-
-                  conditions represent the current state of the ProviderConfig resource.
+                  conditions represent the current state of the Kyverno resource.
                   Each condition has a unique type and reflects the status of a specific aspect of the resource.
 
                   Standard condition types include:
@@ -120,6 +125,22 @@ spec:
                 x-kubernetes-list-map-keys:
                 - type
                 x-kubernetes-list-type: map
+              helmReleaseFailureCount:
+                description: |-
+                  HelmReleaseFailureCount tracks the number of consecutive times the HelmRelease
+                  reported a failed condition. The controller will stop retrying after a fixed threshold.
+                type: integer
+              observedGeneration:
+                description: ObservedGeneration is the generation of this resource
+                  that was last reconciled by the controller.
+                format: int64
+                type: integer
+              phase:
+                description: Phase is the current phase of the resource.
+                type: string
+            required:
+            - observedGeneration
+            - phase
             type: object
         required:
         - spec

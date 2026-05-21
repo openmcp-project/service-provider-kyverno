@@ -19,9 +19,12 @@ package main
 import (
 	"context"
 	"crypto/tls"
+	"fmt"
 	"os"
 	"time"
 
+	helmv2 "github.com/fluxcd/helm-controller/api/v2"
+	sourcev1 "github.com/fluxcd/source-controller/api/v1"
 	flag "github.com/spf13/pflag"
 
 	// Import all Kubernetes client auth plugins (e.g. Azure, GCP, OIDC, etc.)
@@ -37,7 +40,6 @@ import (
 	"github.com/openmcp-project/openmcp-operator/lib/utils"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	"github.com/openmcp-project/service-provider-template/api/crds"
 	rbacv1 "k8s.io/api/rbac/v1"
 	apiextensionv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -51,10 +53,12 @@ import (
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
 
-	spruntime "github.com/openmcp-project/service-provider-template/pkg/runtime"
+	"github.com/openmcp-project/service-provider-kyverno/api/crds"
 
-	{{.KindLower}}sv1alpha1 "github.com/openmcp-project/service-provider-template/api/v1alpha1"
-	"github.com/openmcp-project/service-provider-template/internal/controller"
+	"github.com/openmcp-project/service-provider-kyverno/pkg/spruntime"
+
+	kyvernosv1alpha1 "github.com/openmcp-project/service-provider-kyverno/api/v1alpha1"
+	"github.com/openmcp-project/service-provider-kyverno/internal/controller"
 	// +kubebuilder:scaffold:imports
 )
 
@@ -62,9 +66,6 @@ var (
 	platformScheme   = runtime.NewScheme()
 	onboardingScheme = runtime.NewScheme()
 	mcpScheme        = runtime.NewScheme()
-{{- if .WithWorkloadCluster }}
-	workloadScheme   = runtime.NewScheme()
-{{- end }}
 	setupLog         = ctrl.Log.WithName("setup")
 )
 
@@ -73,35 +74,30 @@ func init() {
 	initPlatformScheme()
 	initOnboardingScheme()
 	initMcpScheme()
-{{- if .WithWorkloadCluster }}
-	initWorkloadScheme()
-{{- end }}
 }
 
 func initPlatformScheme() {
 	utilruntime.Must(clientgoscheme.AddToScheme(platformScheme))
 	utilruntime.Must(apiextensionv1.AddToScheme(platformScheme))
-	utilruntime.Must({{.KindLower}}sv1alpha1.AddToScheme(platformScheme))
+	utilruntime.Must(kyvernosv1alpha1.AddToScheme(platformScheme))
 	utilruntime.Must(clustersv1alpha1.AddToScheme(platformScheme))
 	utilruntime.Must(providerv1alpha1.AddToScheme(platformScheme))
+
+	// add flux things
+	utilruntime.Must(sourcev1.AddToScheme(platformScheme))
+	utilruntime.Must(helmv2.AddToScheme(platformScheme))
 }
 
 func initOnboardingScheme() {
 	utilruntime.Must(clientgoscheme.AddToScheme(onboardingScheme))
 	utilruntime.Must(apiextensionv1.AddToScheme(onboardingScheme))
-	utilruntime.Must({{.KindLower}}sv1alpha1.AddToScheme(onboardingScheme))
+	utilruntime.Must(kyvernosv1alpha1.AddToScheme(onboardingScheme))
 }
 
 func initMcpScheme() {
 	utilruntime.Must(clientgoscheme.AddToScheme(mcpScheme))
 	utilruntime.Must(apiextensionv1.AddToScheme(mcpScheme))
 }
-
-{{- if .WithWorkloadCluster }}
-func initWorkloadScheme() {
-	utilruntime.Must(clientgoscheme.AddToScheme(workloadScheme))
-}
-{{- end }}
 
 // nolint:gocyclo
 func main() {
@@ -243,7 +239,7 @@ func main() {
 		},
 	}
 	clusterAccessManager := clusteraccess.NewClusterAccessManager(platformCluster.Client(),
-		"{{.KindLower}}.{{.Group}}.services.openmcp.cloud", os.Getenv("POD_NAMESPACE"))
+		kyvernosv1alpha1.GroupVersion.Group, os.Getenv("POD_NAMESPACE"))
 	clusterAccessManager.WithLogger(&log).
 		WithInterval(10 * time.Second).
 		WithTimeout(30 * time.Minute)
@@ -267,9 +263,9 @@ func main() {
 		}
 
 		spGVK := metav1.GroupVersionKind{
-			Group:   {{.KindLower}}sv1alpha1.GroupVersion.Group,
-			Version: {{.KindLower}}sv1alpha1.GroupVersion.Version,
-			Kind:    "{{.Kind}}",
+			Group:   kyvernosv1alpha1.GroupVersion.Group,
+			Version: kyvernosv1alpha1.GroupVersion.Version,
+			Kind:    "Kyverno",
 		}
 		if err := utils.RegisterGVKsAtServiceProvider(ctx, platformCluster.Client(), providerName, spGVK); err != nil {
 			setupLog.Error(err, "Failed to register GVK at ServiceProvider")
@@ -314,44 +310,32 @@ func main() {
 		os.Exit(1)
 	}
 	providerConfigUpdates := make(chan event.GenericEvent)
-	spr := spruntime.NewSPReconciler[*{{.KindLower}}sv1alpha1.{{.Kind}}, *{{.KindLower}}sv1alpha1.ProviderConfig](
-		func() *{{.KindLower}}sv1alpha1.{{.Kind}} { return &{{.KindLower}}sv1alpha1.{{.Kind}}{} },
+	spr := spruntime.NewSPReconciler[*kyvernosv1alpha1.Kyverno, *kyvernosv1alpha1.ProviderConfig](
+		func() *kyvernosv1alpha1.Kyverno { return &kyvernosv1alpha1.Kyverno{} },
 	).
 		WithPlatformCluster(platformCluster).
 		WithOnboardingCluster(onboardingCluster).
-		WithServiceProviderReconciler(&controller.{{.Kind}}Reconciler{
+		WithServiceProviderReconciler(&controller.KyvernoReconciler{
 			OnboardingCluster: onboardingCluster,
 			PlatformCluster:   platformCluster,
 			PodNamespace:      podNamespace,
 		}).
-		WithClusterAccessReconciler(clusteraccess.NewClusterAccessReconciler(platformCluster.Client(), "{{.Kind}}").
+		WithClusterAccessReconciler(clusteraccess.NewClusterAccessReconciler(platformCluster.Client(), kyvernosv1alpha1.GroupVersion.Group).
 			WithMCPScheme(mcpScheme).
-			{{- if .WithWorkloadCluster }}
-			WithWorkloadScheme(workloadScheme).
-			{{- end }}
 			WithRetryInterval(10 * time.Second).
 			WithMCPPermissions(adminPermissions).WithMCPRoleRefs([]common.RoleRef{
 			{
 				Name: "cluster-admin",
 				Kind: "ClusterRole",
 			}}).
-			{{- if .WithWorkloadCluster }}
-			WithWorkloadPermissions(adminPermissions).WithWorkloadRoleRefs([]common.RoleRef{
-			{
-				Name: "cluster-admin",
-				Kind: "ClusterRole",
-			},
-		}))
-			{{- else }}
 			SkipWorkloadCluster(),
 		)
-			{{- end }}
-	if err := spr.SetupWithManager(mgr, "{{.KindLower}}", providerConfigUpdates); err != nil {
-		setupLog.Error(err, "unable to create controller", "controller", "{{.Kind}}")
+	if err := spr.SetupWithManager(mgr, "kyverno", providerConfigUpdates); err != nil {
+		setupLog.Error(err, "unable to create controller", "controller", "Kyverno")
 		os.Exit(1)
 	}
-	pcr := spruntime.NewPCReconciler(providerName, func() *{{.KindLower}}sv1alpha1.ProviderConfig {
-		return &{{.KindLower}}sv1alpha1.ProviderConfig{}
+	pcr := spruntime.NewPCReconciler(providerName, func() *kyvernosv1alpha1.ProviderConfig {
+		return &kyvernosv1alpha1.ProviderConfig{}
 	}).
 		WithPlatformCluster(platformCluster).
 		WithUpdateChannel(providerConfigUpdates)

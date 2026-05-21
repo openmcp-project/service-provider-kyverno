@@ -19,10 +19,14 @@ package v1alpha1
 import (
 	"time"
 
+	corev1 "k8s.io/api/core/v1"
+	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-// EDIT THIS FILE!  THIS IS SCAFFOLDING FOR YOU TO OWN!
+// DefaultChartURL points to the default location of where the ocm-k8s-toolkit chart lives.
+const DefaultChartURL = "ghcr.io/kyverno/charts"
+
 // NOTE: json tags are required.  Any new fields you add must have json tags for the fields to be serialized.
 
 // ProviderConfigSpec defines the desired state of ProviderConfig
@@ -37,6 +41,19 @@ type ProviderConfigSpec struct {
 	// +kubebuilder:default:="1m"
 	// +kubebuilder:validation:Format=duration
 	PollInterval *metav1.Duration `json:"pollInterval,omitempty"`
+
+	// Values are arbitrary Helm values passed directly to the managed HelmRelease.
+	// +optional
+	Values *apiextensionsv1.JSON `json:"values,omitempty"`
+
+	// ChartURL is the OCI URL of the Helm chart. Defaults to the official kyverno chart.
+	// +optional
+	ChartURL string `json:"chartURL,omitempty"`
+
+	// ImagePullSecret references a secret in the controller's namespace to replicate
+	// into tenant namespaces and wire as secretRef on the OCIRepository.
+	// +optional
+	ImagePullSecret *corev1.LocalObjectReference `json:"imagePullSecret,omitempty"`
 }
 
 // ProviderConfigStatus defines the observed state of ProviderConfig.
@@ -100,4 +117,28 @@ func init() {
 func (o *ProviderConfig) PollInterval() time.Duration {
 	// TODO pollInterval has to be required
 	return o.Spec.PollInterval.Duration
+}
+
+// GetImagePullSecretRef returns the image pull secret reference from the spec. Nil-safe.
+func (o *ProviderConfig) GetImagePullSecretRef() *corev1.LocalObjectReference {
+	if o == nil {
+		return nil
+	}
+	return o.Spec.ImagePullSecret
+}
+
+// GetChartURL returns the configured chart URL or DefaultChartURL if unset. Nil-safe.
+func (o *ProviderConfig) GetChartURL() string {
+	if o == nil || o.Spec.ChartURL == "" {
+		return DefaultChartURL
+	}
+	return o.Spec.ChartURL
+}
+
+// GetValues returns the Helm values or nil if unset. Nil-safe.
+func (o *ProviderConfig) GetValues() *apiextensionsv1.JSON {
+	if o == nil {
+		return nil
+	}
+	return o.Spec.Values
 }

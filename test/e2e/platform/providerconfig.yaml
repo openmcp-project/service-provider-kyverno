@@ -1,6 +1,7 @@
-apiVersion: foo.services.openmcp.cloud/v1alpha1
+apiVersion: kyverno.services.openmcp.cloud/v1alpha1
 kind: ProviderConfig
 metadata:
-  name: default
+  name: kyverno
 spec:
   pollInterval: 1m
+  chartURL: oci://ghcr.io/satabdig/charts/kyverno

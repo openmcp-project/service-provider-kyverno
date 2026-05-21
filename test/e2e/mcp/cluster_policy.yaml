@@ -1,0 +1,15 @@
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: test-policy
+spec:
+  rules:
+    - name: test-rule
+      match:
+        any:
+          - resources:
+              kinds:
+                - Pod
+      validate:
+        message: "test"
+        deny: {}

@@ -1,0 +1,6 @@
+apiVersion: kyverno.services.openmcp.cloud/v1alpha1
+kind: Kyverno
+metadata:
+  name: test-mcp
+spec:
+  version: "3.3.7"

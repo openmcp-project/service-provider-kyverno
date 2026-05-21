@@ -1,4 +1,4 @@
-package runtime
+package spruntime
 
 import (
 	"k8s.io/apimachinery/pkg/api/meta"
@@ -15,6 +15,7 @@ const (
 	StatusPhaseProgressing = "Progressing"
 	// StatusPhaseTerminating indicates that the resource is not ready and in deletion.
 	StatusPhaseTerminating = "Terminating"
+	StatusPhaseFailed      = "Failed"
 )
 
 // StatusProgressing indicates progressing with synced false
@@ -54,4 +55,17 @@ func StatusTerminating(obj ServiceProviderAPI) {
 	})
 	obj.SetObservedGeneration(obj.GetGeneration())
 	obj.SetPhase(StatusPhaseTerminating)
+}
+
+// StatusFailed indicates ready with ready true
+func StatusFailed(obj ServiceProviderAPI, msg string) {
+	meta.SetStatusCondition(obj.GetConditions(), metav1.Condition{
+		Type:               ServiceProviderConditionReady,
+		Status:             metav1.ConditionFalse,
+		ObservedGeneration: obj.GetGeneration(),
+		Reason:             "ReconcileFailed",
+		Message:            msg,
+	})
+	obj.SetObservedGeneration(obj.GetGeneration())
+	obj.SetPhase(StatusPhaseFailed)
 }
