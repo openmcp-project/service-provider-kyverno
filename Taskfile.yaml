@@ -7,6 +7,7 @@ vars:
   CODE_DIRS: '{{.ROOT_DIR}}/cmd/... {{.ROOT_DIR}}/internal/... {{.ROOT_DIR}}/api/v1alpha1/...'
   COMPONENTS: 'service-provider-kyverno'
   REPO_URL: 'https://github.com/openmcp-project/service-provider-kyverno'
+  COMMON_SCRIPT_DIR: '{{.ROOT_DIR}}/hack/common'
 
 includes:
   shared:
@@ -21,7 +22,7 @@ tasks:
       - docker tag ghcr.io/openmcp-project/images/{{.COMPONENTS}}:{{.VERSION}}-linux-{{ARCH}} ghcr.io/openmcp-project/images/{{.COMPONENTS}}:{{.VERSION}}
     vars:
       VERSION:
-        sh: cat VERSION
+        sh: $COMMON_SCRIPT_DIR/get-version.sh
       ARCH:
         sh: uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/'
 
