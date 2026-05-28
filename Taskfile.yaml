@@ -8,6 +8,9 @@ vars:
   COMPONENTS: 'service-provider-kyverno'
   REPO_URL: 'https://github.com/openmcp-project/service-provider-kyverno'
   COMMON_SCRIPT_DIR: '{{.ROOT_DIR}}/hack/common'
+  CHART_COMPONENTS: "[]"
+  CRDS_COMPONENTS: 'service-provider-crossplane'
+  CRDS_PATH: '{{.ROOT_DIR}}/api/crds/manifests'
 
 includes:
   shared:
@@ -31,4 +34,12 @@ tasks:
     cmds:
       - task: build:img:build-test
       - go test -v ./test/e2e/... -count=1
-  
+
+  test-e2e:cleanup:
+    desc: "Clean up any leftover kind clusters from e2e tests"
+    cmds:
+      - |
+        for cluster in $(kind get clusters | grep -E "^(platform|onboarding|mcp)"); do
+          echo "Deleting kind cluster: $cluster"
+          kind delete cluster --name "$cluster"
+        done
