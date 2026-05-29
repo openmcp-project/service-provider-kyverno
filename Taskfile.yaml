@@ -8,6 +8,9 @@ vars:
   COMPONENTS: 'service-provider-kyverno'
   REPO_URL: 'https://github.com/openmcp-project/service-provider-kyverno'
   COMMON_SCRIPT_DIR: '{{.ROOT_DIR}}/hack/common'
+  CHART_COMPONENTS: "[]"
+  CRDS_COMPONENTS: 'service-provider-kyverno'
+  CRDS_PATH: '{{.ROOT_DIR}}/api/crds/manifests'
 
 includes:
   shared:
@@ -31,4 +34,3 @@ tasks:
     cmds:
       - task: build:img:build-test
       - go test -v ./test/e2e/... -count=1
-  
