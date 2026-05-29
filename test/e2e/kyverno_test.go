@@ -21,6 +21,7 @@ import (
 func TestServiceProvider(t *testing.T) {
 	var onboardingList unstructured.UnstructuredList
 	var domainObjList unstructured.UnstructuredList
+	const mcpName = "test-mcp"
 	basicProviderTest := features.New("provider test").
 		Setup(func(ctx context.Context, t *testing.T, c *envconf.Config) context.Context {
 			if _, err := resources.CreateObjectsFromDir(ctx, c, "platform"); err != nil {
@@ -28,7 +29,7 @@ func TestServiceProvider(t *testing.T) {
 			}
 			return ctx
 		}).
-		Setup(providers.CreateMCP("test-mcp")).
+		Setup(providers.CreateMCP(mcpName)).
 		Assess("verify service can be successfully consumed",
 			func(ctx context.Context, t *testing.T, c *envconf.Config) context.Context {
 				onboardingConfig, err := clusterutils.OnboardingConfig()
@@ -52,7 +53,7 @@ func TestServiceProvider(t *testing.T) {
 		).
 		Assess("verify domain objects can be created",
 			func(ctx context.Context, t *testing.T, c *envconf.Config) context.Context {
-				mcpConfig, err := clusterutils.McpConfig()
+				mcpConfig, err := clusterutils.MCPConfig(ctx, c, mcpName)
 				if err != nil {
 					t.Error(err)
 					return ctx
@@ -90,7 +91,7 @@ func TestServiceProvider(t *testing.T) {
 		).
 		Assess("verify serviceprovider is removed after domain objects are deleted",
 			func(ctx context.Context, t *testing.T, c *envconf.Config) context.Context {
-				mcpConfig, err := clusterutils.McpConfig()
+				mcpConfig, err := clusterutils.MCPConfig(ctx, c, mcpName)
 				if err != nil {
 					t.Error(err)
 					return ctx
@@ -130,6 +131,6 @@ func TestServiceProvider(t *testing.T) {
 			}
 			return ctx
 		}).
-		Teardown(providers.DeleteMCP("test-mcp", wait.WithTimeout(5*time.Minute)))
+		Teardown(providers.DeleteMCP(mcpName, wait.WithTimeout(5*time.Minute)))
 	testenv.Test(t, basicProviderTest.Feature())
 }

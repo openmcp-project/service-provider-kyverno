@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
-	"runtime"
+	"strings"
 	"testing"
 
 	helmv2 "github.com/fluxcd/helm-controller/api/v2"
@@ -23,25 +23,25 @@ var testenv env.Environment
 
 func TestMain(m *testing.M) {
 	initLogging()
-	spImage := fmt.Sprintf("ghcr.io/openmcp-project/images/service-provider-kyverno:0.0.1-linux-%s", runtime.GOARCH)
+	version := mustVersion()
 	openmcp := setup.OpenMCPSetup{
 		Namespace: "openmcp-system",
 		Operator: setup.OpenMCPOperatorSetup{
 			Name:         "openmcp-operator",
-			Image:        "ghcr.io/openmcp-project/images/openmcp-operator:v0.18.1",
+			Image:        "ghcr.io/openmcp-project/images/openmcp-operator:v0.20.0",
 			Environment:  "debug",
 			PlatformName: "platform",
 		},
 		ClusterProviders: []providers.ClusterProviderSetup{
 			{
 				Name:  "kind",
-				Image: "ghcr.io/openmcp-project/images/cluster-provider-kind:v0.2.0",
+				Image: "ghcr.io/openmcp-project/images/cluster-provider-kind:v0.4.0",
 			},
 		},
 		ServiceProviders: []providers.ServiceProviderSetup{
 			{
 				Name:               "kyverno",
-				Image:              spImage,
+				Image:              fmt.Sprintf("ghcr.io/openmcp-project/images/service-provider-kyverno:%s", version),
 				LoadImageToCluster: true,
 			},
 		},
@@ -74,6 +74,15 @@ func registerFluxSchemes(ctx context.Context, cfg *envconf.Config) (context.Cont
 		return ctx, fmt.Errorf("failed to register source-controller scheme: %w", err)
 	}
 	return ctx, nil
+}
+
+func mustVersion() string {
+	cmd := exec.Command("../../hack/common/get-version.sh")
+	version, err := cmd.Output()
+	if err != nil {
+		panic(err)
+	}
+	return strings.TrimSpace(string(version))
 }
 
 func initLogging() {

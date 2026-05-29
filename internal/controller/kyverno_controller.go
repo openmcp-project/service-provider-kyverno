@@ -37,10 +37,12 @@ import (
 	apimeta "k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 
+	"github.com/openmcp-project/opencontrolplane-runtime/pkg/serviceprovider"
+	spclusteraccess "github.com/openmcp-project/opencontrolplane-runtime/pkg/serviceprovider/clusteraccess"
+
 	apiv1alpha1 "github.com/openmcp-project/service-provider-kyverno/api/v1alpha1"
 	"github.com/openmcp-project/service-provider-kyverno/internal/flux"
 	internalstatus "github.com/openmcp-project/service-provider-kyverno/internal/status"
-	spruntime "github.com/openmcp-project/service-provider-kyverno/pkg/spruntime"
 )
 
 const (
@@ -70,10 +72,10 @@ type KyvernoReconciler struct {
 }
 
 // CreateOrUpdate is called on every add or update event
-func (r *KyvernoReconciler) CreateOrUpdate(ctx context.Context, svcobj *apiv1alpha1.Kyverno, providerConfig *apiv1alpha1.ProviderConfig, clusters spruntime.ClusterContext) (ctrl.Result, error) {
+func (r *KyvernoReconciler) CreateOrUpdate(ctx context.Context, svcobj *apiv1alpha1.Kyverno, providerConfig *apiv1alpha1.ProviderConfig, clusters spclusteraccess.ClusterContext) (ctrl.Result, error) {
 	l := logf.FromContext(ctx)
 	l.Info("Reconciling Kyverno resource", "name", svcobj.Name, "namespace", svcobj.Namespace)
-	spruntime.StatusProgressing(svcobj, "Reconciling", "Reconcile in progress")
+	serviceprovider.StatusProgressing(svcobj, "Reconciling", "Reconcile in progress")
 	tenantNamespace, err := libutils.StableMCPNamespace(svcobj.Name, svcobj.Namespace)
 	if err != nil {
 		return ctrl.Result{}, fmt.Errorf("failed to determine stable namespace for Kyverno instance: %w", err)
@@ -81,17 +83,17 @@ func (r *KyvernoReconciler) CreateOrUpdate(ctx context.Context, svcobj *apiv1alp
 	l.Info("Checking tenant namespace", "namespace", tenantNamespace)
 
 	if err = r.replicateImagePullSecret(ctx, providerConfig, tenantNamespace); err != nil {
-		spruntime.StatusFailed(svcobj, err.Error())
+		internalstatus.Failed(svcobj, err.Error())
 		return ctrl.Result{}, fmt.Errorf("failed to replicate image pull secret: %w", err)
 	}
 
 	if err := r.createOrUpdateOciRepository(ctx, svcobj, clusters, tenantNamespace, providerConfig); err != nil {
-		spruntime.StatusFailed(svcobj, err.Error())
+		internalstatus.Failed(svcobj, err.Error())
 		return ctrl.Result{}, fmt.Errorf("failed to reconcile OCIRepository: %w", err)
 	}
 
 	if err := r.createOrUpdateHelmRelease(ctx, tenantNamespace, svcobj, providerConfig); err != nil {
-		spruntime.StatusFailed(svcobj, err.Error())
+		internalstatus.Failed(svcobj, err.Error())
 		return ctrl.Result{}, fmt.Errorf("failed to reconcile HelmRelease: %w", err)
 	}
 	l.Info("Done Reconciling Kyverno resource", "name", svcobj.Name)
@@ -116,7 +118,7 @@ func (r *KyvernoReconciler) reconcileHelmReleaseStatus(ctx context.Context, svco
 		return r.applyHelmReleaseCondition(svcobj, cond)
 	}
 
-	spruntime.StatusProgressing(svcobj, "Waiting", "HelmRelease not yet processed by Flux")
+	serviceprovider.StatusProgressing(svcobj, "Waiting", "HelmRelease not yet processed by Flux")
 	return ctrl.Result{}, nil
 }
 
@@ -125,12 +127,12 @@ func (r *KyvernoReconciler) applyHelmReleaseCondition(svcobj *apiv1alpha1.Kyvern
 	switch cond.Status {
 	case metav1.ConditionTrue:
 		svcobj.Status.HelmReleaseFailureCount = 0
-		spruntime.StatusReady(svcobj)
+		serviceprovider.StatusReady(svcobj)
 		return ctrl.Result{}, nil
 	case metav1.ConditionFalse:
 		return r.handleHelmReleaseFailure(svcobj, cond.Message)
 	default: // ConditionUnknown — still progressing
-		spruntime.StatusProgressing(svcobj, cond.Reason, cond.Message)
+		serviceprovider.StatusProgressing(svcobj, cond.Reason, cond.Message)
 		return ctrl.Result{}, nil
 	}
 }
@@ -139,13 +141,13 @@ func (r *KyvernoReconciler) applyHelmReleaseCondition(svcobj *apiv1alpha1.Kyvern
 func (r *KyvernoReconciler) handleHelmReleaseFailure(svcobj *apiv1alpha1.Kyverno, message string) (ctrl.Result, error) {
 	svcobj.Status.HelmReleaseFailureCount++
 	if svcobj.Status.HelmReleaseFailureCount >= helmReleaseMaxFailures {
-		spruntime.StatusFailed(svcobj, fmt.Sprintf(
+		internalstatus.Failed(svcobj, fmt.Sprintf(
 			"HelmRelease failed %d times, giving up: %s",
 			svcobj.Status.HelmReleaseFailureCount, message,
 		))
 		return ctrl.Result{}, nil
 	}
-	spruntime.StatusFailed(svcobj, fmt.Sprintf(
+	internalstatus.Failed(svcobj, fmt.Sprintf(
 		"HelmRelease failed (attempt %d/%d): %s",
 		svcobj.Status.HelmReleaseFailureCount, helmReleaseMaxFailures, message,
 	))
@@ -153,9 +155,9 @@ func (r *KyvernoReconciler) handleHelmReleaseFailure(svcobj *apiv1alpha1.Kyverno
 }
 
 // Delete is called in reconciliation when the Kyverno resource is marked for deletion
-func (r *KyvernoReconciler) Delete(ctx context.Context, obj *apiv1alpha1.Kyverno, _ *apiv1alpha1.ProviderConfig, clusterCtx spruntime.ClusterContext) (ctrl.Result, error) {
+func (r *KyvernoReconciler) Delete(ctx context.Context, obj *apiv1alpha1.Kyverno, _ *apiv1alpha1.ProviderConfig, clusterCtx spclusteraccess.ClusterContext) (ctrl.Result, error) {
 	// mark for deletion
-	spruntime.StatusTerminating(obj)
+	serviceprovider.StatusTerminating(obj)
 
 	tenantNamespace, err := libutils.StableMCPNamespace(obj.Name, obj.Namespace)
 	if err != nil {
@@ -179,7 +181,7 @@ func (r *KyvernoReconciler) Delete(ctx context.Context, obj *apiv1alpha1.Kyverno
 
 	for _, object := range fluxObjectsForDeletion(tenantNamespace) {
 		if err := r.PlatformCluster.Client().Delete(ctx, object); client.IgnoreNotFound(err) != nil {
-			spruntime.StatusFailed(obj, err.Error())
+			internalstatus.Failed(obj, err.Error())
 			return ctrl.Result{}, fmt.Errorf("delete object failed: %w", err)
 		}
 	}
@@ -250,7 +252,7 @@ func (r *KyvernoReconciler) replicateImagePullSecret(ctx context.Context, provid
 	return nil
 }
 
-func (r *KyvernoReconciler) createOrUpdateOciRepository(ctx context.Context, svcobj *apiv1alpha1.Kyverno, _ spruntime.ClusterContext, namespace string, providerConfig *apiv1alpha1.ProviderConfig) error {
+func (r *KyvernoReconciler) createOrUpdateOciRepository(ctx context.Context, svcobj *apiv1alpha1.Kyverno, _ spclusteraccess.ClusterContext, namespace string, providerConfig *apiv1alpha1.ProviderConfig) error {
 	ociRepo := flux.CreateOciRepository(providerConfig.GetChartURL(), svcobj.Spec.Version, OCIRepositoryName, namespace)
 	managedObj := &sourcev1.OCIRepository{
 		ObjectMeta: metav1.ObjectMeta{
