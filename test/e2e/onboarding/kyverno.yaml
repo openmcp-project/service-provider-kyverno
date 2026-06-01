@@ -1,4 +1,4 @@
-apiVersion: kyverno.services.openmcp.cloud/v1alpha1
+apiVersion: kyverno.services.open-control-plane.io/v1alpha1
 kind: Kyverno
 metadata:
   name: test-mcp
