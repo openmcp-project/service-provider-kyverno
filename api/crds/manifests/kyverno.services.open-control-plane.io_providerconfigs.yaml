@@ -6,9 +6,9 @@ metadata:
     controller-gen.kubebuilder.io/version: v0.20.1
   labels:
     openmcp.cloud/cluster: platform
-  name: providerconfigs.kyverno.services.openmcp.cloud
+  name: providerconfigs.kyverno.services.open-control-plane.io
 spec:
-  group: kyverno.services.openmcp.cloud
+  group: kyverno.services.open-control-plane.io
   names:
     kind: ProviderConfig
     listKind: ProviderConfigList
