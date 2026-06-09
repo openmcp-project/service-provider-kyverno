@@ -315,6 +315,12 @@ func main() {
 		os.Exit(1)
 	}
 	providerConfigUpdates := make(chan event.GenericEvent)
+
+	clusterAccessReconciler := clusteraccess.NewClusterAccessReconciler(platformCluster.Client(), kyvernosv1alpha1.GroupVersion.Group)
+	if debugEnabled() {
+		clusterAccessReconciler = localaccess.NewLocalAccessReconciler(clusterAccessReconciler)
+	}
+
 	spr := serviceprovider.NewAPIReconcilerBuilder[*kyvernosv1alpha1.Kyverno, *kyvernosv1alpha1.ProviderConfig]().
 		EmptyObjectProvider(func() *kyvernosv1alpha1.Kyverno { return &kyvernosv1alpha1.Kyverno{} }).
 		PlatformCluster(platformCluster).
@@ -324,7 +330,7 @@ func main() {
 			PlatformCluster:   platformCluster,
 			PodNamespace:      podNamespace,
 		}).
-		ClusterAccessReconciler(clusteraccess.NewClusterAccessReconciler(platformCluster.Client(), kyvernosv1alpha1.GroupVersion.Group).
+		ClusterAccessReconciler(clusterAccessReconciler.
 			WithMCPScheme(mcpScheme).
 			WithRetryInterval(10 * time.Second).
 			WithMCPPermissions(adminPermissions).WithMCPRoleRefs([]common.RoleRef{
@@ -394,7 +400,7 @@ func requestOnboardingClusterAccess(ctx context.Context, mgr clusteraccess.Manag
 func patchOnboardingClient(ctx context.Context, platformCluster *clusters.Cluster, onboardingCluster *clusters.Cluster, cmdSuffix string) (*clusters.Cluster, error) {
 	onboardingAr := &clustersv1alpha1.AccessRequest{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      clusteraccess.StableRequestNameFromLocalName("fooservice.foo.services.open-control-plane.io", cmdSuffix),
+			Name:      clusteraccess.StableRequestNameFromLocalName(kyvernosv1alpha1.GroupVersion.Group, cmdSuffix),
 			Namespace: os.Getenv("POD_NAMESPACE"),
 		},
 	}
