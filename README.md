@@ -60,6 +60,23 @@ The generated service provider supports the following runtime flags:
 
 For a complete list of available flags, run the generated binary with `-h` or `--help`.
 
+## Quality Criteria
+
+[![Quality: Incubating](https://img.shields.io/badge/Quality-Incubating-3d9970?style=flat-square&labelColor=555)](https://open-control-plane.io/developers/serviceprovider/quality-criteria)
+
+| Criterion                         | Status | Notes                                                                                                                                                                                                                                                                                                                      |
+| --------------------------------- | :----: | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Deletion behaviour                |   ❌    | The delete case is still work-in-progress. A finalizer ensures the Service Provider managed resources like Flux' `OCIRepository` and `HelmRelease` are cleaned-up. But there is no behaviour that ensures deletion is blocked if custom resources (e.g. Kyverno' `ClusterPolicy` objects) in a `ControlPlane` still exist. |
+| Status reporting & error messages |   ✅    |                                                                                                                                                                                                                                                                                                                            |
+| Operation annotations             |   ⚠️    | `openmcp.cloud/operation: ignore` is processed by [opencontrolplane-runtime](https://github.com/openmcp-project/opencontrolplane-runtime). `openmcp.cloud/operation: reconcile` is not processed.                                                                                                                          |
+| API stability policy              |   ✅    |                                                                                                                                                                                                                                                                                                                            |
+| Custom CA support                 |   ❌    | Custom CA bundle propagation to Kyverno components is not implemented.                                                                                                                                                                                                                                                     |
+| Release artifacts (image + OCM)   |   ✅    |                                                                                                                                                                                                                                                                                                                            |
+| Testing                           |   ✅    |                                                                                                                                                                                                                                                                                                                            |
+| Ownership and maintenance docs    |   ✅    |                                                                                                                                                                                                                                                                                                                            |
+
+See the [OpenControlPlane Quality Criteria](https://open-control-plane.io/developers/serviceprovider/quality-criteria) for definitions.
+
 ## Support, Feedback, Contributing
 
 This project is open to feature requests/suggestions, bug reports etc. via [GitHub issues](https://github.com/openmcp-project/service-provider-kyverno/issues). Contribution and feedback are encouraged and always welcome. For more information about how to contribute, the project structure, as well as additional contribution information, see our [Contribution Guidelines](https://github.com/openmcp-project/.github/blob/main/CONTRIBUTING.md).
