@@ -3,28 +3,28 @@
 # and allow the plugins properly work.
 # More info: https://book.kubebuilder.io/reference/project-config.html
 cliVersion: 4.8.0
-domain: openmcp.cloud
+domain: open-control-plane.io
 layout:
 - go.kubebuilder.io/v4
-projectName: sp-template
-repo: github.com/openmcp-project/service-provider-template
+projectName: service-provider-kyverno
+repo: github.com/openmcp-project/service-provider-kyverno
 resources:
 - api:
     crdVersion: v1
     namespaced: true
   controller: true
-  domain: openmcp.cloud
-  group: foo.services
-  kind: FooService
-  path: github.com/openmcp-project/service-provider-template/api/v1alpha1
+  domain: open-control-plane.io
+  group: kyverno.services
+  kind: Kyverno
+  path: github.com/openmcp-project/service-provider-kyverno/api/v1alpha1
   version: v1alpha1
 - api:
     crdVersion: v1
     namespaced: true
   controller: true
-  domain: openmcp.cloud
-  group: foo.services
+  domain: open-control-plane.io
+  group: kyverno.services
   kind: ProviderConfig
-  path: github.com/openmcp-project/service-provider-template/api/v1alpha1
+  path: github.com/openmcp-project/service-provider-kyverno/api/v1alpha1
   version: v1alpha1
 version: "3"
