@@ -9,7 +9,6 @@ A service provider for managing [Kyverno](https://kyverno.io/) deployments withi
 The Kyverno service provider automates the lifecycle management of Kyverno installations, including:
 
 - 🔄 **Automated Kyverno Deployment** - Deploys Kyverno via Helm to ManagedControlPlanes
-- 🔐 **Air-Gapped Support** - Full support for private registries and air-gapped environments
 - 🔑 **Secret Management** - Automatic copying of registry credentials across cluster boundaries
 - 📊 **Status Tracking** - Real-time status reporting of all managed resources
 
@@ -28,12 +27,12 @@ flowchart LR
 
   subgraph OC[Onboarding Cluster]
     kyvernoapi([Kyverno])
-    mcpapi([ManagedControlPlane])
+    mcpapi([ControlPlane])
 
     kyvernoapi -- references --> mcpapi
   end
 
-  subgraph mcp[ManagedControlPlane]
+  subgraph mcp[ControlPlane]
     subgraph KS[kyverno namespace]
       kyvernoctrl[Kyverno Controllers]
       pullsecret([image-pull-secret])
@@ -55,7 +54,7 @@ flowchart LR
 - Go 1.21+
 - [Task](https://taskfile.dev/) (task runner)
 - Docker (for building images)
-- Access to an openMCP environment
+- Access to an OpenControlPlane environment
 
 ### 🛠️ Local Development
 
@@ -109,7 +108,7 @@ metadata:
   name: kyverno
   namespace: openmcp-system
 spec:
-  image: ghcr.io/openmcp-project/images/service-provider-kyverno:v0.1.0
+  image: ghcr.io/openmcp-project/images/service-provider-kyverno:v1.0.0
 ```
 
 ## 📝 API Reference
