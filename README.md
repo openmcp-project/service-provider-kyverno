@@ -10,7 +10,7 @@ The Kyverno service provider automates the lifecycle management of Kyverno insta
 
 - 🔄 **Automated Kyverno Deployment** - Deploys Kyverno via Helm to `ControlPlanes`
 - 🔑 **Secret Management** - Automatic copying of registry credentials across cluster boundaries
-- 📊 **Status Tracking** - Real-time status reporting of all managed resources
+- 📊 **Status Tracking** - Status reporting of all managed resources
 
 ## 🏗️ Architecture
 
