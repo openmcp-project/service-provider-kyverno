@@ -3,12 +3,12 @@ module github.com/openmcp-project/service-provider-kyverno
 go 1.26.2
 
 require (
-	github.com/fluxcd/helm-controller/api v1.5.4
+	github.com/fluxcd/helm-controller/api v1.5.5
 	github.com/fluxcd/pkg/apis/meta v1.25.1
-	github.com/fluxcd/source-controller/api v1.8.3
+	github.com/fluxcd/source-controller/api v1.8.5
 	github.com/openmcp-project/controller-utils v0.29.0
-	github.com/openmcp-project/openmcp-operator/api v0.20.0
-	github.com/openmcp-project/openmcp-operator/lib v0.20.0
+	github.com/openmcp-project/openmcp-operator/api v0.21.0
+	github.com/openmcp-project/openmcp-operator/lib v0.21.0
 	k8s.io/api v0.36.1
 	k8s.io/apimachinery v0.36.1
 	k8s.io/client-go v0.36.1
