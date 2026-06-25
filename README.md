@@ -2,13 +2,13 @@
 
 # 🛡️ service-provider-kyverno
 
-A service provider for managing [Kyverno](https://kyverno.io/) deployments within a ManagedControlPlane environment. This provider enables policy enforcement capabilities by automatically installing and configuring Kyverno on managed control planes.
+A service provider for managing [Kyverno](https://kyverno.io/) deployments within a OpenControlPlane environment. This provider enables policy enforcement capabilities by automatically installing and configuring Kyverno on managed control planes.
 
 ## 📖 Overview
 
 The Kyverno service provider automates the lifecycle management of Kyverno installations, including:
 
-- 🔄 **Automated Kyverno Deployment** - Deploys Kyverno via Helm to ManagedControlPlanes
+- 🔄 **Automated Kyverno Deployment** - Deploys Kyverno via Helm to `ControlPlanes`
 - 🔑 **Secret Management** - Automatic copying of registry credentials across cluster boundaries
 - 📊 **Status Tracking** - Real-time status reporting of all managed resources
 
@@ -115,7 +115,7 @@ spec:
 
 ### Kyverno
 
-The `Kyverno` resource represents a Kyverno installation on a ManagedControlPlane.
+The `Kyverno` resource represents a Kyverno installation on a `ControlPlane`.
 
 ```yaml
 apiVersion: kyverno.services.open-control-plane.io/v1alpha1
