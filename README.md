@@ -108,7 +108,7 @@ metadata:
   name: kyverno
   namespace: openmcp-system
 spec:
-  image: ghcr.io/openmcp-project/images/service-provider-kyverno:v1.0.0
+  image: ghcr.io/openmcp-project/images/service-provider-kyverno:v0.1.0
 ```
 
 ## 📝 API Reference
