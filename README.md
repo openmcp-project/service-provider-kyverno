@@ -1,64 +1,177 @@
 [![REUSE status](https://api.reuse.software/badge/github.com/openmcp-project/service-provider-kyverno)](https://api.reuse.software/info/github.com/openmcp-project/service-provider-kyverno)
 
-# service-provider-kyverno
+# 🛡️ service-provider-kyverno
 
-## About this project
+A service provider for managing [Kyverno](https://kyverno.io/) deployments within a OpenControlPlane environment. This provider enables policy enforcement capabilities by automatically installing and configuring Kyverno on managed control planes.
 
-Service provider Kyverno manages the lifecycle of Kyverno instances in a managed `ControlPlane`.
+## 📖 Overview
 
-## Requirements and Setup
+The Kyverno service provider automates the lifecycle management of Kyverno installations, including:
 
-1. Create a new repository based on this template.
-2. Execute the template to create a new `ServiceProvider`.
-3. Test your `ServiceProvider`.
+- 🔄 **Automated Kyverno Deployment** - Deploys Kyverno via Helm to `ControlPlanes`
+- 🔑 **Secret Management** - Automatic copying of registry credentials across cluster boundaries
+- 📊 **Status Tracking** - Status reporting of all managed resources
 
-The template includes a basic code generation command that lets you create a `ServiceProvider` for your Go module, API kind and group.
-You can also choose to add sample code to get a fully functional `ServiceProvider`.
+## 🏗️ Architecture
 
-For a complete usage overview with the default settings, run:
+```mermaid
+flowchart LR
 
-```shell
-go run ./cmd/template -h
+  subgraph PC[Platform Cluster]
+    spkyverno[Service Provider Kyverno]
+    subgraph TN[Tenant Namespace]
+      ocirepo([OCIRepository])
+      helmrel([HelmRelease])
+    end
+  end
+
+  subgraph OC[Onboarding Cluster]
+    kyvernoapi([Kyverno])
+    mcpapi([ControlPlane])
+
+    kyvernoapi -- references --> mcpapi
+  end
+
+  subgraph mcp[ControlPlane]
+    subgraph KS[kyverno namespace]
+      kyvernoctrl[Kyverno Controllers]
+      pullsecret([image-pull-secret])
+    end
+  end
+
+  spkyverno -- reconciles --> kyvernoapi
+  spkyverno -- creates --> ocirepo
+  spkyverno -- creates --> helmrel
+  helmrel -- installs --> kyvernoctrl
+  spkyverno -- copies secrets --> pullsecret
+  mcpapi -- represents --> mcp
 ```
 
-Then execute the template, for example:
+## 🚦 Getting Started
 
-```shell
-go run ./cmd/template -module github.com/yourorg/yourrepo -kind YourKind -group yourgroup
-```
+### Prerequisites
 
-Running End-to-End tests:
+- Go 1.21+
+- [Task](https://taskfile.dev/) (task runner)
+- Docker (for building images)
+- Access to an OpenControlPlane environment
 
-```shell
+### 🛠️ Local Development
+
+1. **Clone the repository**
+
+   ```bash
+   git clone https://github.com/openmcp-project/service-provider-kyverno.git
+   cd service-provider-kyverno
+   ```
+
+2. **Install dependencies**
+
+   ```bash
+   go mod download
+   ```
+
+3. **Build the binary**
+
+   ```bash
+   task build
+   ```
+
+4. **Run tests**
+
+   ```bash
+   task test
+   ```
+
+5. **Build the container image**
+
+   ```bash
+   task build:img:build
+   ```
+
+### 🧪 Running End-to-End Tests
+
+```bash
 task test-e2e
 ```
 
-## CLI Flags
+This will build the image and run the full e2e test suite.
 
-### Template Generator Flags
+## 📦 Installation
 
-The template generator (`cmd/template`) supports the following flags:
+To install the Kyverno service provider, create a `ServiceProvider` resource in your platform cluster:
 
-- `-module`: Go module path (default: `github.com/openmcp-project/service-provider-template`)
-- `-kind`: GVK kind name (default: `FooService`)
-- `-group`: GVK group prefix, will be suffixed with `services.openmcp.cloud` (default: `foo`)
-- `-v`: Generate with sample code (default: `false`)
-- `-w`: Generate a service provider that reconciles its `DomainServiceAPI` on the [WorkloadCluster](https://openmcp-project.github.io/docs/about/design/service-provider#deployment-model) (default: `false`)
+```yaml
+apiVersion: openmcp.cloud/v1alpha1
+kind: ServiceProvider
+metadata:
+  name: kyverno
+  namespace: openmcp-system
+spec:
+  image: ghcr.io/openmcp-project/images/service-provider-kyverno:v0.1.0
+```
 
-### Service Provider Runtime Flags
+## 📝 API Reference
 
-The generated service provider supports the following runtime flags:
+### Kyverno
 
-- `--verbosity`: Logging verbosity level (see [controller-runtime logging](https://github.com/kubernetes-sigs/controller-runtime/blob/main/TMP-LOGGING.md))
-- `--environment`: Name of the environment (required for operation)
-- `--provider-name`: Name of the provider resource (required for operation)
-- `--metrics-bind-address`: Address for the metrics endpoint (default: `0`, use `:8443` for HTTPS or `:8080` for HTTP)
-- `--health-probe-bind-address`: Address for health probe endpoint (default: `:8081`)
-- `--leader-elect`: Enable leader election for controller manager (default: `false`)
-- `--metrics-secure`: Serve metrics endpoint securely via HTTPS (default: `true`)
-- `--enable-http2`: Enable HTTP/2 for metrics and webhook servers (default: `false`)
+The `Kyverno` resource represents a Kyverno installation on a `ControlPlane`.
 
-For a complete list of available flags, run the generated binary with `-h` or `--help`.
+```yaml
+apiVersion: kyverno.services.open-control-plane.io/v1alpha1
+kind: Kyverno
+metadata:
+  name: my-kyverno
+  namespace: default
+spec:
+  version: "3.3.7"
+```
+
+| Field          | Type   | Description                       |
+| -------------- | ------ | --------------------------------- |
+| `spec.version` | string | The version of Kyverno to install |
+
+Note that the version must match one of the versions defined in the `ProviderConfig`.
+
+### ProviderConfig
+
+The `ProviderConfig` resource configures deployment settings for the Kyverno service provider.
+
+```yaml
+apiVersion: kyverno.services.open-control-plane.io/v1alpha1
+kind: ProviderConfig
+metadata:
+  name: kyverno
+spec:
+  # Optional: Reconciliation interval
+  pollInterval: "1m"
+  # Optional: OCI URL of the Kyverno Helm chart
+  chartURL: "oci://ghcr.io/kyverno/charts"
+  # Optional: Secret for private chart registry
+  imagePullSecret:
+    name: "image-registry-credentials"
+  # Optional: Custom Helm values passed directly to the HelmRelease
+  values:
+    replicaCount: 3
+```
+
+| Field                | Type   | Description                                                                     |
+| -------------------- | ------ | ------------------------------------------------------------------------------- |
+| `spec.pollInterval`  | duration | How often to reconcile resources (default: `1m`)                              |
+| `spec.chartURL`      | string | OCI registry URL for the Kyverno Helm chart (default: `ghcr.io/kyverno/charts`) |
+| `spec.imagePullSecret` | object | Secret name for chart registry authentication                                 |
+| `spec.values`        | object | Custom Helm values passed directly to the managed HelmRelease                   |
+
+## 🔧 Development Tasks
+
+| Command                | Description                |
+| ---------------------- | -------------------------- |
+| `task build`           | Build the binary           |
+| `task build:img:build` | Build the container image  |
+| `task test`            | Run unit tests             |
+| `task test-e2e`        | Run end-to-end tests       |
+| `task generate`        | Generate CRDs and code     |
+| `task validate`        | Run linters and formatters |
 
 ## Quality Criteria
 
@@ -77,19 +190,19 @@ For a complete list of available flags, run the generated binary with `-h` or `-
 
 See the [OpenControlPlane Quality Criteria](https://open-control-plane.io/developers/serviceprovider/quality-criteria) for definitions.
 
-## Support, Feedback, Contributing
+## 🤝 Support, Feedback, Contributing
 
 This project is open to feature requests/suggestions, bug reports etc. via [GitHub issues](https://github.com/openmcp-project/service-provider-kyverno/issues). Contribution and feedback are encouraged and always welcome. For more information about how to contribute, the project structure, as well as additional contribution information, see our [Contribution Guidelines](https://github.com/openmcp-project/.github/blob/main/CONTRIBUTING.md).
 
-## Security / Disclosure
+## 🔒 Security / Disclosure
 
 If you find any bug that may be a security problem, please follow our instructions at [in our security policy](https://github.com/openmcp-project/service-provider-kyverno/security/policy) on how to report it. Please do not create GitHub issues for security-related doubts or problems.
 
-## Code of Conduct
+## 📜 Code of Conduct
 
 We as members, contributors, and leaders pledge to make participation in our community a harassment-free experience for everyone. By participating in this project, you agree to abide by its [Code of Conduct](https://github.com/openmcp-project/.github/blob/main/CODE_OF_CONDUCT.md) at all times.
 
-## Licensing
+## 📄 Licensing
 
 Copyright OpenControlPlane contributors. Please see our [LICENSE](LICENSE) for copyright and license information. Detailed information including third-party components and their licensing/copyright information is available [via the REUSE tool](https://api.reuse.software/info/github.com/openmcp-project/service-provider-kyverno).
 
