@@ -49,7 +49,6 @@ import (
 	_ "k8s.io/client-go/plugin/pkg/client/auth"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/controller-runtime/pkg/event"
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
 	"sigs.k8s.io/controller-runtime/pkg/metrics/filters"
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
@@ -314,7 +313,6 @@ func main() {
 		setupLog.Error(err, "unable to add platform cluster to manager")
 		os.Exit(1)
 	}
-	providerConfigUpdates := make(chan event.GenericEvent)
 
 	clusterAccessReconciler := clusteraccess.NewClusterAccessReconciler(platformCluster.Client(), kyvernosv1alpha1.GroupVersion.Group)
 	if debugEnabled() {
@@ -323,6 +321,7 @@ func main() {
 
 	spr := serviceprovider.NewAPIReconcilerBuilder[*kyvernosv1alpha1.Kyverno, *kyvernosv1alpha1.ProviderConfig]().
 		EmptyObjectProvider(func() *kyvernosv1alpha1.Kyverno { return &kyvernosv1alpha1.Kyverno{} }).
+		EmptyConfigProvider(func() *kyvernosv1alpha1.ProviderConfig { return &kyvernosv1alpha1.ProviderConfig{} }).
 		PlatformCluster(platformCluster).
 		OnboardingCluster(onboardingCluster).
 		Reconciler(&controller.KyvernoReconciler{
@@ -340,18 +339,8 @@ func main() {
 			}}).
 			SkipWorkloadCluster(),
 		).MustBuild()
-	if err := spr.SetupWithManager(mgr, "kyverno", providerConfigUpdates); err != nil {
+	if err := spr.SetupWithManager(mgr, providerName); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "Kyverno")
-		os.Exit(1)
-	}
-	pcr := serviceprovider.NewConfigReconcilerBuilder[*kyvernosv1alpha1.ProviderConfig]().
-		EmptyObjectProvider(func() *kyvernosv1alpha1.ProviderConfig { return &kyvernosv1alpha1.ProviderConfig{} }).
-		ProviderName(providerName).
-		PlatformCluster(platformCluster).
-		UpdateChannel(providerConfigUpdates).
-		MustBuild()
-	if err := pcr.SetupWithManager(mgr); err != nil {
-		setupLog.Error(err, "unable to create controller", "controller", "ProviderConfig")
 		os.Exit(1)
 	}
 	// +kubebuilder:scaffold:builder
