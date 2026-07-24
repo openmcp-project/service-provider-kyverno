@@ -76,7 +76,7 @@ func TestServiceProvider(t *testing.T) {
 				}
 				//TODO: move to method
 				for _, obj := range onboardingList.Items {
-					if err := resources.DeleteObject(ctx, onboardingConfig, &obj); err != nil {
+					if err := onboardingConfig.Client().Resources().Delete(ctx, &obj); err != nil {
 						t.Errorf("failed to initiate deletion of onboarding object: %v", err)
 						return ctx
 					}
