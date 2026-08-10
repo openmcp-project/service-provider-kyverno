@@ -51,8 +51,9 @@ const (
 	HelmReleaseName = "kyverno"
 	// OCIRepositoryName is the name of the OCI repository where the Kyverno Helm chart is stored.
 	OCIRepositoryName = "kyverno"
-	// OCMSystemNamespace is the namespace in the onboarding cluster where Kyverno controller will be deployed.
-	OCMSystemNamespace = "openmcp-system"
+	// KyvernoNamespace is the dedicated namespace on the controlplane where Kyverno will be installed.
+	// Kyverno must be installed in its own namespace per upstream requirements.
+	KyvernoNamespace = "kyverno"
 	// requestSuffixMCP is the suffix used for the mcp cluster.
 	requestSuffixMCP = "--mcp"
 	// helmReleaseMaxFailures is the maximum number of consecutive failures from the HelmRelease conditions before the controller stops retrying and surfaces the failure in the Kyverno resource status.
@@ -293,8 +294,8 @@ func (r *KyvernoReconciler) createOrUpdateHelmRelease(ctx context.Context, names
 		Name:             HelmReleaseName,
 		Namespace:        namespace,
 		ReleaseName:      apiv1alpha1.GetReleaseName(svcobj.Name),
-		TargetNamespace:  OCMSystemNamespace,
-		StorageNamespace: OCMSystemNamespace,
+		TargetNamespace:  KyvernoNamespace,
+		StorageNamespace: KyvernoNamespace,
 		OCIRepoName:      OCIRepositoryName,
 		OCIRepoNamespace: namespace,
 		Values:           providerConfig.GetValues(),
