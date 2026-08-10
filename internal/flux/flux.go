@@ -43,6 +43,12 @@ type HelmReleaseParams struct {
 
 // CreateOciRepository builds a fully-specified OCIRepository resource.
 func CreateOciRepository(chartURL, version, name, namespace string) *sourcev1.OCIRepository {
+	ref := &sourcev1.OCIRepositoryRef{}
+	if strings.HasPrefix(version, "sha256:") {
+		ref.Digest = version
+	} else {
+		ref.Tag = version
+	}
 	return &sourcev1.OCIRepository{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,
@@ -55,9 +61,7 @@ func CreateOciRepository(chartURL, version, name, namespace string) *sourcev1.OC
 				MediaType: "application/vnd.cncf.helm.chart.content.v1.tar+gzip",
 				Operation: sourcev1.OCILayerCopy,
 			},
-			Reference: &sourcev1.OCIRepositoryRef{
-				Tag: version,
-			},
+			Reference: ref,
 		},
 	}
 }
