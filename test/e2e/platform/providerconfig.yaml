@@ -4,4 +4,4 @@ metadata:
   name: kyverno
 spec:
   pollInterval: 1m
-  chartURL: oci://ghcr.io/satabdig/charts/kyverno
+  chartURL: oci://ghcr.io/openmcp-project/components/component-descriptors/github.com/openmcp-project/releasechannel/kyverno
