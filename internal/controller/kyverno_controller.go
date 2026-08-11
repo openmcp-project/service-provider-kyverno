@@ -34,6 +34,7 @@ import (
 
 	helmv2 "github.com/fluxcd/helm-controller/api/v2"
 	sourcev1 "github.com/fluxcd/source-controller/api/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	apimeta "k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 
@@ -179,14 +180,24 @@ func (r *KyvernoReconciler) Delete(ctx context.Context, obj *apiv1alpha1.Kyverno
 		panic("MCP cluster context is nil, expected it to be set in Delete()")
 	}
 
-	for _, object := range fluxObjectsForDeletion(tenantNamespace) {
-		if err := r.PlatformCluster.Client().Delete(ctx, object); client.IgnoreNotFound(err) != nil {
+	objectsToDelete := fluxObjectsForDeletion(tenantNamespace)
+	var deletedObjects []client.Object
+	for _, object := range objectsToDelete {
+		err := r.PlatformCluster.Client().Delete(ctx, object)
+		if client.IgnoreNotFound(err) != nil {
 			internalstatus.Failed(obj, err.Error())
 			return ctrl.Result{}, fmt.Errorf("delete object failed: %w", err)
 		}
+		if apierrors.IsNotFound(err) {
+			deletedObjects = append(deletedObjects, object)
+		}
 	}
-	//TODO: actually wait for successful deletion instead of just requeueing with a fixed delay
-	return ctrl.Result{}, nil
+	if len(deletedObjects) == len(objectsToDelete) {
+		// all objects are deleted
+		return ctrl.Result{}, nil
+	}
+	// wait until all objects are deleted
+	return ctrl.Result{RequeueAfter: 5 * time.Second}, nil
 }
 
 // fluxObjectsForDeletion returns the flux resources that should be cleaned up
