@@ -10,7 +10,7 @@ require (
 	github.com/openmcp-project/opencontrolplane-runtime v1.3.0
 	github.com/openmcp-project/openmcp-operator/api v1.3.0
 	github.com/openmcp-project/openmcp-operator/lib v1.3.0
-	github.com/openmcp-project/openmcp-testing v1.2.0
+	github.com/openmcp-project/openmcp-testing v1.3.0
 	github.com/spf13/pflag v1.0.10
 	k8s.io/api v0.36.3
 	k8s.io/apimachinery v0.36.3
@@ -27,11 +27,11 @@ require (
 	github.com/cenkalti/backoff/v5 v5.0.3 // indirect
 	github.com/cyphar/filepath-securejoin v0.6.1 // indirect
 	github.com/felixge/httpsnoop v1.0.4 // indirect
-	github.com/fluxcd/flux2/v2 v2.9.2 // indirect
-	github.com/fluxcd/kustomize-controller/api v1.9.3 // indirect
+	github.com/fluxcd/flux2/v2 v2.9.4 // indirect
+	github.com/fluxcd/kustomize-controller/api v1.9.4 // indirect
 	github.com/fluxcd/pkg/apis/acl v0.10.0 // indirect
 	github.com/fluxcd/pkg/apis/kustomize v1.20.0 // indirect
-	github.com/fluxcd/pkg/kustomize v1.35.3 // indirect
+	github.com/fluxcd/pkg/kustomize v1.35.4 // indirect
 	github.com/fluxcd/pkg/tar v1.2.0 // indirect
 	github.com/go-errors/errors v1.5.1 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect
