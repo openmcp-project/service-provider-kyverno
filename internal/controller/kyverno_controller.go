@@ -82,7 +82,7 @@ func (r *KyvernoReconciler) CreateOrUpdate(ctx context.Context, svcobj *apiv1alp
 
 	kyvernoVersion, err := providerConfig.SelectVersion(svcobj.Spec.Version)
 	if err != nil {
-		internalstatus.Failed(svcobj, err.Error())
+		serviceprovider.StatusProgressing(svcobj, "InvalidVersion", err.Error())
 		return ctrl.Result{}, ctrlerrors.IgnoreInvalidUserInput(err)
 	}
 
