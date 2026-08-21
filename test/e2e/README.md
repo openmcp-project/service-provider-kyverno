@@ -19,7 +19,7 @@ spec:
             image:
               registry: ghcr.io
               repository: openmcp-project/components/component-descriptors/github.com/openmcp-project/releasechannel/kyverno
-              tag: "sha256:..."             # digest of the Kyverno image in the releasechannel OCI registry
+              tag: "v1.18.2"               # image tag from referenceName in the OCM component descriptor
 ```
 
 The `Kyverno` resource in the onboarding cluster simply references the version by its human-readable name:
@@ -54,11 +54,11 @@ spec:
      version: v3.8.2                                                                          # -> version
    ```
 
-3. Find the resource with `name: image-kyverno` and `type: ociImage` — copy its `localReference` digest and `version`:
+3. Find the resource with `name: image-kyverno` and `type: ociImage` — copy the tag from its `referenceName`:
 
    ```yaml
    - access:
-       localReference: sha256:0a540e2ddf74d0d2d3d45f9ef248d7dbc96576accdbcc6a2dd7eaff9fea56504  # -> values.admissionController.container.image.tag
+       referenceName: kyverno/kyverno:v1.18.2  # -> values.admissionController.container.image.tag
      name: image-kyverno
      type: ociImage
      version: v1.18.2
