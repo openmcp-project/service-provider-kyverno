@@ -13,5 +13,5 @@ spec:
           container:
             image:
               registry: ghcr.io
-              repository: openmcp-project/components/kyverno/kyverno
+              repository: openmcp-project/components/component-descriptors/github.com/openmcp-project/releasechannel/kyverno
               tag: "sha256:0a540e2ddf74d0d2d3d45f9ef248d7dbc96576accdbcc6a2dd7eaff9fea56504"
