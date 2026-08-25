@@ -19,7 +19,7 @@ spec:
             image:
               registry: ghcr.io
               repository: openmcp-project/components/component-descriptors/github.com/openmcp-project/releasechannel/kyverno
-              tag: "v1.18.2"               # image tag from referenceName in the OCM component descriptor
+              tag: "sha256:..."               # digest of the image in the OCM component descriptor
 ```
 
 The `Kyverno` resource in the onboarding cluster simply references the version by its human-readable name:
@@ -44,24 +44,25 @@ spec:
    ocm get cv ghcr.io/openmcp-project/components//github.com/openmcp-project/releasechannel/kyverno --latest -o yaml
    ```
 
-2. In the output, find the resource with `name: kyverno` and `type: helmChart` — copy its `localReference` digest and `version`:
+2. In the output, find the value for the end-user facing `version`:
+
+   ```yaml
+   resources:
+   - access:
+     ...
+   - access:
+     ...
+   sources: null
+   version: v3.8.2  # -> version
+   ```
+
+3. In the output, find the resource with `name: kyverno` and `type: helmChart` — copy its `localReference` digest:
 
    ```yaml
    - access:
        localReference: sha256:51a5a3e87e6c9dc254a7045f844dd46aadbdef2e78f27def39e9c5c363ea6265  # -> chartVersion
      name: kyverno
      type: helmChart
-     version: v3.8.2                                                                          # -> version
-   ```
-
-3. Find the resource with `name: image-kyverno` and `type: ociImage` — copy the tag from its `referenceName`:
-
-   ```yaml
-   - access:
-       referenceName: kyverno/kyverno:v1.18.2  # -> values.admissionController.container.image.tag
-     name: image-kyverno
-     type: ociImage
-     version: v1.18.2
    ```
 
 4. Add or update the corresponding entry in [`platform/providerconfig.yaml`](/test/e2e/platform/providerconfig.yaml).
