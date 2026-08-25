@@ -155,12 +155,12 @@ spec:
     replicaCount: 3
 ```
 
-| Field                | Type   | Description                                                                     |
-| -------------------- | ------ | ------------------------------------------------------------------------------- |
-| `spec.pollInterval`  | duration | How often to reconcile resources (default: `1m`)                              |
-| `spec.chartURL`      | string | OCI registry URL for the Kyverno Helm chart (default: `ghcr.io/kyverno/charts`) |
-| `spec.imagePullSecret` | object | Secret name for chart registry authentication                                 |
-| `spec.values`        | object | Custom Helm values passed directly to the managed HelmRelease                   |
+| Field                  | Type     | Description                                                                     |
+| ---------------------- | -------- | ------------------------------------------------------------------------------- |
+| `spec.pollInterval`    | duration | How often to reconcile resources (default: `1m`)                                |
+| `spec.chartURL`        | string   | OCI registry URL for the Kyverno Helm chart (default: `ghcr.io/kyverno/charts`) |
+| `spec.imagePullSecret` | object   | Secret name for chart registry authentication                                   |
+| `spec.values`          | object   | Custom Helm values passed directly to the managed HelmRelease                   |
 
 ## 🔧 Development Tasks
 
@@ -177,16 +177,16 @@ spec:
 
 [![Quality: Incubating](https://img.shields.io/badge/Quality-Incubating-3d9970?style=flat-square&labelColor=555)](https://open-control-plane.io/developers/serviceprovider/quality-criteria)
 
-| Criterion                         | Status | Notes                                                                                                                                                                                                                                                                                                                      |
-| --------------------------------- | :----: | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Deletion behaviour                |   ❌    | The delete case is still work-in-progress. A finalizer ensures the Service Provider managed resources like Flux' `OCIRepository` and `HelmRelease` are cleaned-up. But there is no behaviour that ensures deletion is blocked if custom resources (e.g. Kyverno' `ClusterPolicy` objects) in a `ControlPlane` still exist. |
-| Status reporting & error messages |   ✅    |                                                                                                                                                                                                                                                                                                                            |
-| Operation annotations             |   ⚠️    | `openmcp.cloud/operation: ignore` is processed by [opencontrolplane-runtime](https://github.com/openmcp-project/opencontrolplane-runtime). `openmcp.cloud/operation: reconcile` is not processed.                                                                                                                          |
-| API stability policy              |   ✅    |                                                                                                                                                                                                                                                                                                                            |
-| Custom CA support                 |   ❌    | Custom CA bundle propagation to Kyverno components is not implemented.                                                                                                                                                                                                                                                     |
-| Release artifacts (image + OCM)   |   ✅    |                                                                                                                                                                                                                                                                                                                            |
-| Testing                           |   ✅    |                                                                                                                                                                                                                                                                                                                            |
-| Ownership and maintenance docs    |   ✅    |                                                                                                                                                                                                                                                                                                                            |
+| Criterion                         | Status | Notes                                                                                                                                                                                             |
+| --------------------------------- | :----: | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Deletion behaviour                |   ✅    |                                                                                                                                                                                                   |
+| Status reporting & error messages |   ✅    |                                                                                                                                                                                                   |
+| Operation annotations             |   ⚠️    | `openmcp.cloud/operation: ignore` is processed by [opencontrolplane-runtime](https://github.com/openmcp-project/opencontrolplane-runtime). `openmcp.cloud/operation: reconcile` is not processed. |
+| API stability policy              |   ✅    |                                                                                                                                                                                                   |
+| Custom CA support                 |   ❌    | Custom CA bundle propagation to Kyverno components is not implemented.                                                                                                                            |
+| Release artifacts (image + OCM)   |   ✅    |                                                                                                                                                                                                   |
+| Testing                           |   ✅    |                                                                                                                                                                                                   |
+| Ownership and maintenance docs    |   ✅    |                                                                                                                                                                                                   |
 
 See the [OpenControlPlane Quality Criteria](https://open-control-plane.io/developers/serviceprovider/quality-criteria) for definitions.
 
