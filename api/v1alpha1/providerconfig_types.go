@@ -132,12 +132,14 @@ func (o *ProviderConfig) PollInterval() time.Duration {
 // SelectVersion finds the KyvernoVersion entry matching requestedVersion.
 // Returns ErrInvalidUserInput if not found.
 func (o *ProviderConfig) SelectVersion(requestedVersion string) (KyvernoVersion, error) {
+	available := make([]string, 0, len(o.Spec.Versions))
 	for _, v := range o.Spec.Versions {
 		if v.Version == requestedVersion {
 			return v, nil
 		}
+		available = append(available, v.Version)
 	}
-	return KyvernoVersion{}, fmt.Errorf("%w: requested version (%s) is not available", ctrlerrors.ErrInvalidUserInput, requestedVersion)
+	return KyvernoVersion{}, fmt.Errorf("%w: requested version %q is not available, available versions: %v", ctrlerrors.ErrInvalidUserInput, requestedVersion, available)
 }
 
 // GetChartURL returns the configured chart URL or DefaultChartURL if unset.
