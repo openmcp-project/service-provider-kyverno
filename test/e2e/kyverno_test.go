@@ -12,6 +12,7 @@ import (
 	"sigs.k8s.io/e2e-framework/pkg/envconf"
 	"sigs.k8s.io/e2e-framework/pkg/features"
 
+	libutils "github.com/openmcp-project/openmcp-operator/lib/utils"
 	"github.com/openmcp-project/openmcp-testing/pkg/clusterutils"
 	"github.com/openmcp-project/openmcp-testing/pkg/conditions"
 	"github.com/openmcp-project/openmcp-testing/pkg/providers"
@@ -48,6 +49,44 @@ func TestServiceProvider(t *testing.T) {
 					}
 				}
 				objList.DeepCopyInto(&onboardingList)
+				return ctx
+			},
+		).
+		Assess("chart pull secret replicated to tenant namespace",
+			func(ctx context.Context, t *testing.T, c *envconf.Config) context.Context {
+				tenantNamespace, err := libutils.StableMCPNamespace(mcpName, "default")
+				if err != nil {
+					t.Errorf("failed to get tenant namespace: %v", err)
+					return ctx
+				}
+				chartSecret := &corev1.Secret{}
+				chartSecret.SetName("sp-kyverno-privateregcred")
+				chartSecret.SetNamespace(tenantNamespace)
+				secretList := &corev1.SecretList{
+					Items: []corev1.Secret{*chartSecret},
+				}
+				if err := wait.For(k8sconditions.New(c.Client().Resources()).ResourcesFound(secretList), wait.WithTimeout(2*time.Minute)); err != nil {
+					t.Errorf("chart pull secret not found in tenant namespace: %v", err)
+				}
+				return ctx
+			},
+		).
+		Assess("image pull secret replicated to kyverno namespace on MCP",
+			func(ctx context.Context, t *testing.T, c *envconf.Config) context.Context {
+				mcpConfig, err := clusterutils.MCPConfig(ctx, c, mcpName)
+				if err != nil {
+					t.Error(err)
+					return ctx
+				}
+				imagePullSecret := &corev1.Secret{}
+				imagePullSecret.SetName("privateregcred")
+				imagePullSecret.SetNamespace("kyverno")
+				secretList := &corev1.SecretList{
+					Items: []corev1.Secret{*imagePullSecret},
+				}
+				if err := wait.For(k8sconditions.New(mcpConfig.Client().Resources()).ResourcesFound(secretList), wait.WithTimeout(2*time.Minute)); err != nil {
+					t.Errorf("image pull secret not found in kyverno namespace on MCP: %v", err)
+				}
 				return ctx
 			},
 		).
