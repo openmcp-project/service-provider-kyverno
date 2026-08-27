@@ -355,15 +355,15 @@ func (r *KyvernoReconciler) replicateImagePullSecrets(ctx context.Context, mcpCl
 	return nil
 }
 
-// deleteOrphanSecrets deletes all secrets in namespace on cl that are labeled as managed by this
-// controller but whose names are not in keep. Pass an empty keep slice to delete all managed secrets.
-func deleteOrphanSecrets(ctx context.Context, cl client.Client, namespace string, keep []string) error {
+// deleteOrphanSecrets deletes all secrets in namespace that are labeled as managed by this
+// controller but whose names are not in keep. Pass nil to delete all managed secrets.
+func deleteOrphanSecrets(ctx context.Context, c client.Client, namespace string, keep []string) error {
 	keepSet := make(map[string]struct{}, len(keep))
 	for _, name := range keep {
 		keepSet[name] = struct{}{}
 	}
 	list := &corev1.SecretList{}
-	if err := cl.List(ctx, list,
+	if err := c.List(ctx, list,
 		client.InNamespace(namespace),
 		client.MatchingLabels{managedByLabelKey: managedByLabelValue},
 	); err != nil {
@@ -373,7 +373,7 @@ func deleteOrphanSecrets(ctx context.Context, cl client.Client, namespace string
 		if _, ok := keepSet[list.Items[i].Name]; ok {
 			continue
 		}
-		if err := cl.Delete(ctx, &list.Items[i]); client.IgnoreNotFound(err) != nil {
+		if err := c.Delete(ctx, &list.Items[i]); client.IgnoreNotFound(err) != nil {
 			return fmt.Errorf("failed to delete orphan secret %q in namespace %q: %w", list.Items[i].Name, namespace, err)
 		}
 	}
