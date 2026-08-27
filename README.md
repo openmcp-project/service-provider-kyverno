@@ -145,22 +145,29 @@ metadata:
 spec:
   # Optional: Reconciliation interval
   pollInterval: "1m"
-  # Optional: OCI URL of the Kyverno Helm chart
-  chartURL: "oci://ghcr.io/kyverno/charts"
-  # Optional: Secret for private chart registry
-  imagePullSecret:
-    name: "image-registry-credentials"
-  # Optional: Custom Helm values passed directly to the HelmRelease
-  values:
-    replicaCount: 3
+  # Required: list of installable Kyverno versions
+  versions:
+    - version: "v3.3.7"
+      chartVersion: "3.3.7"
+      # Optional: OCI URL of the Kyverno Helm chart
+      chartURL: "oci://ghcr.io/kyverno/charts/kyverno"
+      # Optional: Secret for private chart registry (must exist in the controller namespace)
+      chartPullSecret: "image-registry-credentials"
+      # Optional: Custom Helm values passed directly to the managed HelmRelease
+      helmValues:
+        global:
+          imagePullSecrets:
+            - name: "image-registry-credentials"
 ```
 
-| Field                  | Type     | Description                                                                     |
-| ---------------------- | -------- | ------------------------------------------------------------------------------- |
-| `spec.pollInterval`    | duration | How often to reconcile resources (default: `1m`)                                |
-| `spec.chartURL`        | string   | OCI registry URL for the Kyverno Helm chart (default: `ghcr.io/kyverno/charts`) |
-| `spec.imagePullSecret` | object   | Secret name for chart registry authentication                                   |
-| `spec.values`          | object   | Custom Helm values passed directly to the managed HelmRelease                   |
+| Field                              | Type     | Description                                                                          |
+| ---------------------------------- | -------- | ------------------------------------------------------------------------------------ |
+| `spec.pollInterval`                | duration | How often to reconcile resources (default: `1m`)                                     |
+| `spec.versions[].version`          | string   | Kyverno version string that maps to `Kyverno.spec.version`                           |
+| `spec.versions[].chartVersion`     | string   | Helm chart version or digest to install                                              |
+| `spec.versions[].chartURL`         | string   | OCI registry URL for the Helm chart (default: `oci://ghcr.io/kyverno/charts/kyverno`) |
+| `spec.versions[].chartPullSecret`  | string   | Secret name for chart registry authentication (replicated into tenant namespace)     |
+| `spec.versions[].helmValues`       | object   | Custom Helm values passed directly to the managed HelmRelease                        |
 
 ## 🔧 Development Tasks
 
