@@ -41,8 +41,8 @@ type HelmReleaseParams struct {
 	KubeConfigRef    *meta.SecretKeyReference
 }
 
-// OciRepositoryParams holds all inputs needed to construct an OCIRepository.
-type OciRepositoryParams struct {
+// OCIRepositoryParams holds all inputs needed to construct an OCIRepository.
+type OCIRepositoryParams struct {
 	ChartURL            string
 	Version             string
 	Name                string
@@ -50,8 +50,8 @@ type OciRepositoryParams struct {
 	ChartPullSecretName string // optional; if non-empty, sets Spec.SecretRef
 }
 
-// CreateOciRepository builds a fully-specified OCIRepository resource.
-func CreateOciRepository(p OciRepositoryParams) *sourcev1.OCIRepository {
+// CreateOCIRepository builds a fully-specified OCIRepository resource.
+func CreateOCIRepository(p OCIRepositoryParams) *sourcev1.OCIRepository {
 	ref := &sourcev1.OCIRepositoryRef{}
 	if strings.HasPrefix(p.Version, "sha256:") {
 		ref.Digest = p.Version
@@ -128,8 +128,8 @@ func CreateHelmRelease(p HelmReleaseParams) *helmv2.HelmRelease {
 	}
 }
 
-// OciRepositoryRef returns a minimal OCIRepository stub for kubeclient requests (only ObjectMeta is set).
-func OciRepositoryRef(name, namespace string) *sourcev1.OCIRepository {
+// OCIRepositoryRef returns a minimal OCIRepository stub for kubeclient requests (only ObjectMeta is set).
+func OCIRepositoryRef(name, namespace string) *sourcev1.OCIRepository {
 	return &sourcev1.OCIRepository{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,

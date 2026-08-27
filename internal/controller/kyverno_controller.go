@@ -233,7 +233,7 @@ func (r *KyvernoReconciler) Delete(ctx context.Context, obj *apiv1alpha1.Kyverno
 // when a Kyverno instance is deleted.
 func fluxObjectsForDeletion(namespace string) []client.Object {
 	return []client.Object{
-		flux.OciRepositoryRef(OCIRepositoryName, namespace),
+		flux.OCIRepositoryRef(OCIRepositoryName, namespace),
 		flux.HelmReleaseRef(HelmReleaseName, namespace),
 	}
 }
@@ -319,7 +319,7 @@ func (r *KyvernoReconciler) replicateImagePullSecrets(ctx context.Context, mcpCl
 }
 
 func (r *KyvernoReconciler) createOrUpdateOCIRepository(ctx context.Context, _ *apiv1alpha1.Kyverno, _ spclusteraccess.ClusterContext, namespace string, kyvernoVersion apiv1alpha1.KyvernoVersion, chartPullSecretName string) error {
-	ociRepo := flux.CreateOciRepository(flux.OciRepositoryParams{
+	ociRepo := flux.CreateOCIRepository(flux.OCIRepositoryParams{
 		ChartURL:            kyvernoVersion.GetChartURL(),
 		Version:             kyvernoVersion.ChartVersion,
 		Name:                OCIRepositoryName,
