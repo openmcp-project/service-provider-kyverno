@@ -23,6 +23,7 @@ import (
 
 	"github.com/fluxcd/pkg/apis/meta"
 	"github.com/openmcp-project/controller-utils/pkg/clusters"
+	ctrlutils "github.com/openmcp-project/controller-utils/pkg/controller"
 	ctrlerrors "github.com/openmcp-project/controller-utils/pkg/errors"
 	clustersv1alpha1 "github.com/openmcp-project/openmcp-operator/api/clusters/v1alpha1"
 	"github.com/openmcp-project/openmcp-operator/lib/clusteraccess"
@@ -44,10 +45,13 @@ import (
 
 	apiv1alpha1 "github.com/openmcp-project/service-provider-kyverno/api/v1alpha1"
 	"github.com/openmcp-project/service-provider-kyverno/internal/flux"
+	"github.com/openmcp-project/service-provider-kyverno/internal/helm"
 	internalstatus "github.com/openmcp-project/service-provider-kyverno/internal/status"
 )
 
 const (
+	// secretNamePrefix is the prefix used for secrets replicated into tenant namespaces.
+	secretNamePrefix = "sp-kyverno-"
 	// HelmReleaseName is the name of the Helm release used to deploy Kyverno in the onboarding cluster.
 	HelmReleaseName = "kyverno"
 	// OCIRepositoryName is the name of the OCI repository where the Kyverno Helm chart is stored.
@@ -92,12 +96,27 @@ func (r *KyvernoReconciler) CreateOrUpdate(ctx context.Context, svcobj *apiv1alp
 	}
 	l.Info("Checking tenant namespace", "namespace", tenantNamespace)
 
-	if err = r.replicateChartPullSecret(ctx, kyvernoVersion, tenantNamespace); err != nil {
+	prefixedChartPullSecret, err := r.replicateChartPullSecret(ctx, kyvernoVersion, tenantNamespace)
+	if err != nil {
 		internalstatus.Failed(svcobj, err.Error())
 		return ctrl.Result{}, fmt.Errorf("failed to replicate chart pull secret: %w", err)
 	}
 
-	if err := r.createOrUpdateOCIRepository(ctx, svcobj, clusters, tenantNamespace, kyvernoVersion); err != nil {
+	helmValues, err := helm.ExtractHelmValues(kyvernoVersion.HelmValues)
+	if err != nil {
+		internalstatus.Failed(svcobj, err.Error())
+		return ctrl.Result{}, fmt.Errorf("failed to extract helm values: %w", err)
+	}
+
+	if clusters.MCPCluster == nil {
+		return ctrl.Result{}, fmt.Errorf("MCP cluster context is nil, cannot replicate image pull secrets")
+	}
+	if err := r.replicateImagePullSecrets(ctx, clusters.MCPCluster.Client(), helmValues); err != nil {
+		internalstatus.Failed(svcobj, err.Error())
+		return ctrl.Result{}, fmt.Errorf("failed to replicate image pull secrets: %w", err)
+	}
+
+	if err := r.createOrUpdateOCIRepository(ctx, svcobj, clusters, tenantNamespace, kyvernoVersion, prefixedChartPullSecret); err != nil {
 		internalstatus.Failed(svcobj, err.Error())
 		return ctrl.Result{}, fmt.Errorf("failed to reconcile OCIRepository: %w", err)
 	}
@@ -242,9 +261,13 @@ func (r *KyvernoReconciler) kyvernoDomainObjectsExist(ctx context.Context, cl cl
 	return false, nil
 }
 
-func (r *KyvernoReconciler) replicateChartPullSecret(ctx context.Context, kyvernoVersion apiv1alpha1.KyvernoVersion, targetNamespace string) error {
+func (r *KyvernoReconciler) replicateChartPullSecret(ctx context.Context, kyvernoVersion apiv1alpha1.KyvernoVersion, targetNamespace string) (string, error) {
 	if kyvernoVersion.ChartPullSecret == "" {
-		return nil
+		return "", nil
+	}
+	prefixedName, err := ctrlutils.ShortenToXCharacters(fmt.Sprintf("%s%s", secretNamePrefix, kyvernoVersion.ChartPullSecret), ctrlutils.K8sMaxNameLength)
+	if err != nil {
+		return "", fmt.Errorf("error generating prefixed secret name: %w", err)
 	}
 	platformClient := r.PlatformCluster.Client()
 
@@ -252,12 +275,12 @@ func (r *KyvernoReconciler) replicateChartPullSecret(ctx context.Context, kyvern
 	sourceKey := client.ObjectKey{Name: kyvernoVersion.ChartPullSecret, Namespace: r.PodNamespace}
 
 	if err := platformClient.Get(ctx, sourceKey, sourceSecret); err != nil {
-		return fmt.Errorf("failed to get chart pull secret %q from namespace %q: %w", kyvernoVersion.ChartPullSecret, r.PodNamespace, err)
+		return "", fmt.Errorf("failed to get chart pull secret %q from namespace %q: %w", kyvernoVersion.ChartPullSecret, r.PodNamespace, err)
 	}
 
 	targetSecret := &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      kyvernoVersion.ChartPullSecret,
+			Name:      prefixedName,
 			Namespace: targetNamespace,
 		},
 	}
@@ -266,17 +289,41 @@ func (r *KyvernoReconciler) replicateChartPullSecret(ctx context.Context, kyvern
 		targetSecret.Type = sourceSecret.Type
 		return nil
 	}); err != nil {
-		return fmt.Errorf("failed to replicate chart pull secret %q to namespace %q: %w", kyvernoVersion.ChartPullSecret, targetNamespace, err)
+		return "", fmt.Errorf("failed to replicate chart pull secret %q to namespace %q: %w", kyvernoVersion.ChartPullSecret, targetNamespace, err)
+	}
+	return prefixedName, nil
+}
+
+func (r *KyvernoReconciler) replicateImagePullSecrets(ctx context.Context, mcpClient client.Client, helmValues *helm.HelmValues) error {
+	for _, ref := range helmValues.Global.ImagePullSecrets {
+		sourceSecret := &corev1.Secret{}
+		if err := r.PlatformCluster.Client().Get(ctx, client.ObjectKey{Name: ref.Name, Namespace: r.PodNamespace}, sourceSecret); err != nil {
+			return fmt.Errorf("failed to get image pull secret %q from namespace %q: %w", ref.Name, r.PodNamespace, err)
+		}
+		targetSecret := &corev1.Secret{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      ref.Name,
+				Namespace: KyvernoNamespace,
+			},
+		}
+		if _, err := ctrl.CreateOrUpdate(ctx, mcpClient, targetSecret, func() error {
+			targetSecret.Data = sourceSecret.Data
+			targetSecret.Type = sourceSecret.Type
+			return nil
+		}); err != nil {
+			return fmt.Errorf("failed to replicate image pull secret %q to namespace %q on MCP: %w", ref.Name, KyvernoNamespace, err)
+		}
 	}
 	return nil
 }
 
-func (r *KyvernoReconciler) createOrUpdateOCIRepository(ctx context.Context, _ *apiv1alpha1.Kyverno, _ spclusteraccess.ClusterContext, namespace string, kyvernoVersion apiv1alpha1.KyvernoVersion) error {
+func (r *KyvernoReconciler) createOrUpdateOCIRepository(ctx context.Context, _ *apiv1alpha1.Kyverno, _ spclusteraccess.ClusterContext, namespace string, kyvernoVersion apiv1alpha1.KyvernoVersion, chartPullSecretName string) error {
 	ociRepo := flux.CreateOciRepository(flux.OciRepositoryParams{
-		ChartURL:  kyvernoVersion.GetChartURL(),
-		Version:   kyvernoVersion.ChartVersion,
-		Name:      OCIRepositoryName,
-		Namespace: namespace,
+		ChartURL:            kyvernoVersion.GetChartURL(),
+		Version:             kyvernoVersion.ChartVersion,
+		Name:                OCIRepositoryName,
+		Namespace:           namespace,
+		ChartPullSecretName: chartPullSecretName,
 	})
 	managedObj := &sourcev1.OCIRepository{
 		ObjectMeta: metav1.ObjectMeta{
