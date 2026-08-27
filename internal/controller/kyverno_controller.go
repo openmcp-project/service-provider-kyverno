@@ -52,6 +52,10 @@ import (
 const (
 	// secretNamePrefix is the prefix used for secrets replicated into tenant namespaces.
 	secretNamePrefix = "sp-kyverno-"
+	// managedByLabelKey / managedByLabelValue mark secrets that were replicated by this controller
+	// so they can be identified and cleaned up when no longer needed.
+	managedByLabelKey   = "app.kubernetes.io/managed-by"
+	managedByLabelValue = "sp-kyverno"
 	// HelmReleaseName is the name of the Helm release used to deploy Kyverno in the onboarding cluster.
 	HelmReleaseName = "kyverno"
 	// OCIRepositoryName is the name of the OCI repository where the Kyverno Helm chart is stored.
@@ -115,6 +119,25 @@ func (r *KyvernoReconciler) CreateOrUpdate(ctx context.Context, svcobj *apiv1alp
 	if err := r.replicateImagePullSecrets(ctx, clusters.MCPCluster.Client(), helmValues); err != nil {
 		internalstatus.Failed(svcobj, err.Error())
 		return ctrl.Result{}, fmt.Errorf("failed to replicate image pull secrets: %w", err)
+	}
+
+	// clean up any managed secrets in the tenant namespace that are no longer desired
+	desiredPlatformSecrets := []string{}
+	if prefixedChartPullSecret != "" {
+		desiredPlatformSecrets = append(desiredPlatformSecrets, prefixedChartPullSecret)
+	}
+	if err := deleteOrphanSecrets(ctx, r.PlatformCluster.Client(), tenantNamespace, desiredPlatformSecrets); err != nil {
+		internalstatus.Failed(svcobj, err.Error())
+		return ctrl.Result{}, fmt.Errorf("failed to clean up orphan secrets in tenant namespace: %w", err)
+	}
+
+	desiredMCPSecrets := make([]string, 0, len(helmValues.Global.ImagePullSecrets))
+	for _, ref := range helmValues.Global.ImagePullSecrets {
+		desiredMCPSecrets = append(desiredMCPSecrets, ref.Name)
+	}
+	if err := deleteOrphanSecrets(ctx, clusters.MCPCluster.Client(), KyvernoNamespace, desiredMCPSecrets); err != nil {
+		internalstatus.Failed(svcobj, err.Error())
+		return ctrl.Result{}, fmt.Errorf("failed to clean up orphan secrets in kyverno namespace on MCP: %w", err)
 	}
 
 	if err := r.createOrUpdateOCIRepository(ctx, svcobj, clusters, tenantNamespace, kyvernoVersion, prefixedChartPullSecret); err != nil {
@@ -222,7 +245,13 @@ func (r *KyvernoReconciler) Delete(ctx context.Context, obj *apiv1alpha1.Kyverno
 		}
 	}
 	if len(deletedObjects) == len(objectsToDelete) {
-		// all objects are deleted
+		// all objects are deleted; clean up replicated secrets
+		if err := deleteOrphanSecrets(ctx, r.PlatformCluster.Client(), tenantNamespace, nil); err != nil {
+			return ctrl.Result{}, fmt.Errorf("failed to clean up secrets in tenant namespace: %w", err)
+		}
+		if err := deleteOrphanSecrets(ctx, clusterCtx.MCPCluster.Client(), KyvernoNamespace, nil); err != nil {
+			return ctrl.Result{}, fmt.Errorf("failed to clean up secrets in kyverno namespace on MCP: %w", err)
+		}
 		return ctrl.Result{}, nil
 	}
 	// wait until all objects are deleted
@@ -286,6 +315,10 @@ func (r *KyvernoReconciler) replicateChartPullSecret(ctx context.Context, kyvern
 		},
 	}
 	if _, err := ctrl.CreateOrUpdate(ctx, platformClient, targetSecret, func() error {
+		if targetSecret.Labels == nil {
+			targetSecret.Labels = map[string]string{}
+		}
+		targetSecret.Labels[managedByLabelKey] = managedByLabelValue
 		targetSecret.Data = sourceSecret.Data
 		targetSecret.Type = sourceSecret.Type
 		return nil
@@ -308,11 +341,40 @@ func (r *KyvernoReconciler) replicateImagePullSecrets(ctx context.Context, mcpCl
 			},
 		}
 		if _, err := ctrl.CreateOrUpdate(ctx, mcpClient, targetSecret, func() error {
+			if targetSecret.Labels == nil {
+				targetSecret.Labels = map[string]string{}
+			}
+			targetSecret.Labels[managedByLabelKey] = managedByLabelValue
 			targetSecret.Data = sourceSecret.Data
 			targetSecret.Type = sourceSecret.Type
 			return nil
 		}); err != nil {
 			return fmt.Errorf("failed to replicate image pull secret %q to namespace %q on MCP: %w", ref.Name, KyvernoNamespace, err)
+		}
+	}
+	return nil
+}
+
+// deleteOrphanSecrets deletes all secrets in namespace on cl that are labeled as managed by this
+// controller but whose names are not in keep. Pass an empty keep slice to delete all managed secrets.
+func deleteOrphanSecrets(ctx context.Context, cl client.Client, namespace string, keep []string) error {
+	keepSet := make(map[string]struct{}, len(keep))
+	for _, name := range keep {
+		keepSet[name] = struct{}{}
+	}
+	list := &corev1.SecretList{}
+	if err := cl.List(ctx, list,
+		client.InNamespace(namespace),
+		client.MatchingLabels{managedByLabelKey: managedByLabelValue},
+	); err != nil {
+		return fmt.Errorf("failed to list managed secrets in namespace %q: %w", namespace, err)
+	}
+	for i := range list.Items {
+		if _, ok := keepSet[list.Items[i].Name]; ok {
+			continue
+		}
+		if err := cl.Delete(ctx, &list.Items[i]); client.IgnoreNotFound(err) != nil {
+			return fmt.Errorf("failed to delete orphan secret %q in namespace %q: %w", list.Items[i].Name, namespace, err)
 		}
 	}
 	return nil
