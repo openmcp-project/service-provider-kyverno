@@ -83,6 +83,7 @@ type KyvernoReconciler struct {
 }
 
 // CreateOrUpdate is called on every add or update event
+// nolint:gocyclo
 func (r *KyvernoReconciler) CreateOrUpdate(ctx context.Context, svcobj *apiv1alpha1.Kyverno, providerConfig *apiv1alpha1.ProviderConfig, clusters spclusteraccess.ClusterContext) (ctrl.Result, error) {
 	l := logf.FromContext(ctx)
 	l.Info("Reconciling Kyverno resource", "name", svcobj.Name, "namespace", svcobj.Namespace)
@@ -208,6 +209,7 @@ func (r *KyvernoReconciler) handleHelmReleaseFailure(svcobj *apiv1alpha1.Kyverno
 }
 
 // Delete is called in reconciliation when the Kyverno resource is marked for deletion
+// nolint:gocyclo
 func (r *KyvernoReconciler) Delete(ctx context.Context, obj *apiv1alpha1.Kyverno, _ *apiv1alpha1.ProviderConfig, clusterCtx spclusteraccess.ClusterContext) (ctrl.Result, error) {
 	// mark for deletion
 	serviceprovider.StatusTerminating(obj)
