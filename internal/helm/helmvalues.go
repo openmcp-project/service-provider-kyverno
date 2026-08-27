@@ -9,7 +9,7 @@ import (
 
 // HelmValues defines the helm values that are explicitly processed during reconciliation.
 type HelmValues struct {
-	Global Global `json:"global,omitempty"`
+	Global Global `json:"global,omitempty,omitzero"`
 }
 
 // Global defines the global settings that are explicitly processed during reconciliation.
