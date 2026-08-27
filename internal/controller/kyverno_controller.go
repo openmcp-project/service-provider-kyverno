@@ -305,7 +305,7 @@ func (r *KyvernoReconciler) createOrUpdateHelmRelease(ctx context.Context, names
 		StorageNamespace: KyvernoNamespace,
 		OCIRepoName:      OCIRepositoryName,
 		OCIRepoNamespace: namespace,
-		Values:           kyvernoVersion.Values,
+		Values:           kyvernoVersion.HelmValues,
 		KubeConfigRef:    fluxConfigRef,
 	})
 	managedObj := &helmv2.HelmRelease{

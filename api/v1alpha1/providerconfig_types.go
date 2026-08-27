@@ -65,9 +65,9 @@ type KyvernoVersion struct {
 	// +optional
 	ChartPullSecret string `json:"chartPullSecret,omitempty"`
 
-	// Values are arbitrary Helm values passed directly to the managed HelmRelease.
+	// HelmValues are arbitrary Helm values passed directly to the managed HelmRelease.
 	// +optional
-	Values *apiextensionsv1.JSON `json:"values,omitempty"`
+	HelmValues *apiextensionsv1.JSON `json:"helmValues,omitempty"`
 }
 
 // ProviderConfigStatus defines the observed state of ProviderConfig.

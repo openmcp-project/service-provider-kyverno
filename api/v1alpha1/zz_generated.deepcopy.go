@@ -108,8 +108,8 @@ func (in *KyvernoVersion) DeepCopyInto(out *KyvernoVersion) {
 		*out = new(string)
 		**out = **in
 	}
-	if in.Values != nil {
-		in, out := &in.Values, &out.Values
+	if in.HelmValues != nil {
+		in, out := &in.HelmValues, &out.HelmValues
 		*out = new(apiextensionsv1.JSON)
 		(*in).DeepCopyInto(*out)
 	}
