@@ -71,7 +71,7 @@ func TestServiceProvider(t *testing.T) {
 				return ctx
 			},
 		).
-		Assess("image pull secret replicated to kyverno namespace on MCP",
+		Assess("image pull secret replicated to kyverno namespace on ControlPlane",
 			func(ctx context.Context, t *testing.T, c *envconf.Config) context.Context {
 				mcpConfig, err := clusterutils.MCPConfig(ctx, c, mcpName)
 				if err != nil {
@@ -85,7 +85,7 @@ func TestServiceProvider(t *testing.T) {
 					Items: []corev1.Secret{*imagePullSecret},
 				}
 				if err := wait.For(k8sconditions.New(mcpConfig.Client().Resources()).ResourcesFound(secretList), wait.WithTimeout(2*time.Minute)); err != nil {
-					t.Errorf("image pull secret not found in kyverno namespace on MCP: %v", err)
+					t.Errorf("image pull secret not found in kyverno namespace on ControlPlane: %v", err)
 				}
 				return ctx
 			},
@@ -175,7 +175,7 @@ func TestServiceProvider(t *testing.T) {
 				return ctx
 			},
 		).
-		Assess("image pull secret removed from kyverno namespace on MCP after uninstall",
+		Assess("image pull secret removed from kyverno namespace on ControlPlane after uninstall",
 			func(ctx context.Context, t *testing.T, c *envconf.Config) context.Context {
 				mcpConfig, err := clusterutils.MCPConfig(ctx, c, mcpName)
 				if err != nil {
@@ -189,7 +189,7 @@ func TestServiceProvider(t *testing.T) {
 					k8sconditions.New(mcpConfig.Client().Resources()).ResourceDeleted(imagePullSecret),
 					wait.WithTimeout(2*time.Minute),
 				); err != nil {
-					t.Errorf("image pull secret still present in kyverno namespace on MCP after uninstall: %v", err)
+					t.Errorf("image pull secret still present in kyverno namespace on ControlPlane after uninstall: %v", err)
 				}
 				return ctx
 			},
