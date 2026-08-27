@@ -382,6 +382,7 @@ func deleteOrphanSecrets(ctx context.Context, c client.Client, namespace string,
 	return nil
 }
 
+// TODO: make simpler
 func (r *KyvernoReconciler) createOrUpdateOCIRepository(ctx context.Context, _ *apiv1alpha1.Kyverno, _ spclusteraccess.ClusterContext, namespace string, kyvernoVersion apiv1alpha1.KyvernoVersion, chartPullSecretName string) error {
 	ociRepo := flux.CreateOCIRepository(flux.OCIRepositoryParams{
 		ChartURL:            kyvernoVersion.GetChartURL(),
@@ -417,7 +418,7 @@ func (r *KyvernoReconciler) createOrUpdateHelmRelease(ctx context.Context, names
 	helmRelease := flux.CreateHelmRelease(flux.HelmReleaseParams{
 		Name:             HelmReleaseName,
 		Namespace:        namespace,
-		ReleaseName:      apiv1alpha1.GetReleaseName(svcobj.Name),
+		ReleaseName:      apiv1alpha1.GetReleaseName(svcobj.Name), // TODO: is this right here?
 		TargetNamespace:  KyvernoNamespace,
 		StorageNamespace: KyvernoNamespace,
 		OCIRepoName:      OCIRepositoryName,
