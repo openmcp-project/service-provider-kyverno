@@ -131,11 +131,11 @@ func (r *KyvernoReconciler) CreateOrUpdate(ctx context.Context, svcobj *apiv1alp
 		return ctrl.Result{}, fmt.Errorf("failed to clean up orphan secrets in tenant namespace: %w", err)
 	}
 
-	desiredMCPSecrets := make([]string, 0, len(helmValues.Global.ImagePullSecrets))
+	desiredControlPlaneSecrets := make([]string, 0, len(helmValues.Global.ImagePullSecrets))
 	for _, ref := range helmValues.Global.ImagePullSecrets {
-		desiredMCPSecrets = append(desiredMCPSecrets, ref.Name)
+		desiredControlPlaneSecrets = append(desiredControlPlaneSecrets, ref.Name)
 	}
-	if err := deleteOrphanSecrets(ctx, clusters.MCPCluster.Client(), KyvernoNamespace, desiredMCPSecrets); err != nil {
+	if err := deleteOrphanSecrets(ctx, clusters.MCPCluster.Client(), KyvernoNamespace, desiredControlPlaneSecrets); err != nil {
 		internalstatus.Failed(svcobj, err.Error())
 		return ctrl.Result{}, fmt.Errorf("failed to clean up orphan secrets in kyverno namespace on MCP: %w", err)
 	}
