@@ -156,6 +156,44 @@ func TestServiceProvider(t *testing.T) {
 				return ctx
 			},
 		).
+		Assess("chart pull secret removed from tenant namespace after uninstall",
+			func(ctx context.Context, t *testing.T, c *envconf.Config) context.Context {
+				tenantNamespace, err := libutils.StableMCPNamespace(mcpName, "default")
+				if err != nil {
+					t.Errorf("failed to get tenant namespace: %v", err)
+					return ctx
+				}
+				chartSecret := &corev1.Secret{}
+				chartSecret.SetName("sp-kyverno-privateregcred")
+				chartSecret.SetNamespace(tenantNamespace)
+				if err := wait.For(
+					k8sconditions.New(c.Client().Resources()).ResourceDeleted(chartSecret),
+					wait.WithTimeout(2*time.Minute),
+				); err != nil {
+					t.Errorf("chart pull secret still present in tenant namespace after uninstall: %v", err)
+				}
+				return ctx
+			},
+		).
+		Assess("image pull secret removed from kyverno namespace on MCP after uninstall",
+			func(ctx context.Context, t *testing.T, c *envconf.Config) context.Context {
+				mcpConfig, err := clusterutils.MCPConfig(ctx, c, mcpName)
+				if err != nil {
+					t.Error(err)
+					return ctx
+				}
+				imagePullSecret := &corev1.Secret{}
+				imagePullSecret.SetName("privateregcred")
+				imagePullSecret.SetNamespace("kyverno")
+				if err := wait.For(
+					k8sconditions.New(mcpConfig.Client().Resources()).ResourceDeleted(imagePullSecret),
+					wait.WithTimeout(2*time.Minute),
+				); err != nil {
+					t.Errorf("image pull secret still present in kyverno namespace on MCP after uninstall: %v", err)
+				}
+				return ctx
+			},
+		).
 		Teardown(func(ctx context.Context, t *testing.T, c *envconf.Config) context.Context {
 			//TODO: move to method or testing utils
 			onboardingConfig, err := clusterutils.OnboardingConfig()
