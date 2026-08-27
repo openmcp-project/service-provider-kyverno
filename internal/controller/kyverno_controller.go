@@ -292,7 +292,7 @@ func (r *KyvernoReconciler) createOrUpdateOciRepository(ctx context.Context, _ *
 }
 
 func (r *KyvernoReconciler) createOrUpdateHelmRelease(ctx context.Context, namespace string, svcobj *apiv1alpha1.Kyverno, kyvernoVersion apiv1alpha1.KyvernoVersion) error {
-	fluxConfigRef, err := r.getMcpFluxConfig(ctx, namespace, svcobj.Name)
+	fluxConfigRef, err := r.getControlPlaneFluxConfig(ctx, namespace, svcobj.Name)
 	if err != nil {
 		return fmt.Errorf("failed to get FluxConfig for MCP cluster: %w", err)
 	}
@@ -325,7 +325,7 @@ func (r *KyvernoReconciler) createOrUpdateHelmRelease(ctx context.Context, names
 	return nil
 }
 
-func (r *KyvernoReconciler) getMcpFluxConfig(ctx context.Context, namespace string, objectName string) (*meta.SecretKeyReference, error) {
+func (r *KyvernoReconciler) getControlPlaneFluxConfig(ctx context.Context, namespace string, objectName string) (*meta.SecretKeyReference, error) {
 	mcpAccessRequest := &clustersv1alpha1.AccessRequest{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      clusteraccess.StableRequestNameFromLocalName(clusterAccessName, objectName) + requestSuffixMCP,
