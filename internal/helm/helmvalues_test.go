@@ -12,13 +12,13 @@ func TestExtractHelmValues(t *testing.T) {
 	tests := []struct {
 		name    string
 		values  *apiextensionsv1.JSON
-		want    *HelmValues
+		want    *Values
 		wantErr bool
 	}{
 		{
 			name:    "Nil input returns empty HelmValues",
 			values:  nil,
-			want:    &HelmValues{},
+			want:    &Values{},
 			wantErr: false,
 		},
 		{
@@ -26,7 +26,7 @@ func TestExtractHelmValues(t *testing.T) {
 			values: &apiextensionsv1.JSON{
 				Raw: []byte(`{"global": {"imagePullSecrets": [{"name": "my-secret"}]}}`),
 			},
-			want: &HelmValues{
+			want: &Values{
 				Global: Global{
 					ImagePullSecrets: []corev1.LocalObjectReference{
 						{Name: "my-secret"},
@@ -40,7 +40,7 @@ func TestExtractHelmValues(t *testing.T) {
 			values: &apiextensionsv1.JSON{
 				Raw: []byte(`{"replicaCount": 3}`),
 			},
-			want:    &HelmValues{},
+			want:    &Values{},
 			wantErr: false,
 		},
 		{

@@ -295,7 +295,7 @@ func (r *KyvernoReconciler) replicateChartPullSecret(ctx context.Context, kyvern
 	return prefixedName, nil
 }
 
-func (r *KyvernoReconciler) replicateImagePullSecrets(ctx context.Context, mcpClient client.Client, helmValues *helm.HelmValues) error {
+func (r *KyvernoReconciler) replicateImagePullSecrets(ctx context.Context, mcpClient client.Client, helmValues *helm.Values) error {
 	for _, ref := range helmValues.Global.ImagePullSecrets {
 		sourceSecret := &corev1.Secret{}
 		if err := r.PlatformCluster.Client().Get(ctx, client.ObjectKey{Name: ref.Name, Namespace: r.PodNamespace}, sourceSecret); err != nil {
