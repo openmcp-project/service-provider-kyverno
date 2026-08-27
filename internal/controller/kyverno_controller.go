@@ -109,6 +109,7 @@ func (r *KyvernoReconciler) CreateOrUpdate(ctx context.Context, svcobj *apiv1alp
 	}
 
 	if clusters.MCPCluster == nil {
+		internalstatus.Failed(svcobj, "MCP cluster context is nil")
 		return ctrl.Result{}, fmt.Errorf("MCP cluster context is nil, cannot replicate image pull secrets")
 	}
 	if err := r.replicateImagePullSecrets(ctx, clusters.MCPCluster.Client(), helmValues); err != nil {
