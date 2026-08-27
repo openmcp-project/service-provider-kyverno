@@ -97,7 +97,7 @@ func (r *KyvernoReconciler) CreateOrUpdate(ctx context.Context, svcobj *apiv1alp
 		return ctrl.Result{}, fmt.Errorf("failed to replicate chart pull secret: %w", err)
 	}
 
-	if err := r.createOrUpdateOciRepository(ctx, svcobj, clusters, tenantNamespace, kyvernoVersion); err != nil {
+	if err := r.createOrUpdateOCIRepository(ctx, svcobj, clusters, tenantNamespace, kyvernoVersion); err != nil {
 		internalstatus.Failed(svcobj, err.Error())
 		return ctrl.Result{}, fmt.Errorf("failed to reconcile OCIRepository: %w", err)
 	}
@@ -271,8 +271,13 @@ func (r *KyvernoReconciler) replicateChartPullSecret(ctx context.Context, kyvern
 	return nil
 }
 
-func (r *KyvernoReconciler) createOrUpdateOciRepository(ctx context.Context, _ *apiv1alpha1.Kyverno, _ spclusteraccess.ClusterContext, namespace string, kyvernoVersion apiv1alpha1.KyvernoVersion) error {
-	ociRepo := flux.CreateOciRepository(kyvernoVersion.GetChartURL(), kyvernoVersion.ChartVersion, OCIRepositoryName, namespace)
+func (r *KyvernoReconciler) createOrUpdateOCIRepository(ctx context.Context, _ *apiv1alpha1.Kyverno, _ spclusteraccess.ClusterContext, namespace string, kyvernoVersion apiv1alpha1.KyvernoVersion) error {
+	ociRepo := flux.CreateOciRepository(flux.OciRepositoryParams{
+		ChartURL:  kyvernoVersion.GetChartURL(),
+		Version:   kyvernoVersion.ChartVersion,
+		Name:      OCIRepositoryName,
+		Namespace: namespace,
+	})
 	managedObj := &sourcev1.OCIRepository{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      ociRepo.Name,

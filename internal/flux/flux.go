@@ -41,22 +41,31 @@ type HelmReleaseParams struct {
 	KubeConfigRef    *meta.SecretKeyReference
 }
 
+// OciRepositoryParams holds all inputs needed to construct an OCIRepository.
+type OciRepositoryParams struct {
+	ChartURL            string
+	Version             string
+	Name                string
+	Namespace           string
+	ChartPullSecretName string // optional; if non-empty, sets Spec.SecretRef
+}
+
 // CreateOciRepository builds a fully-specified OCIRepository resource.
-func CreateOciRepository(chartURL, version, name, namespace string) *sourcev1.OCIRepository {
+func CreateOciRepository(p OciRepositoryParams) *sourcev1.OCIRepository {
 	ref := &sourcev1.OCIRepositoryRef{}
-	if strings.HasPrefix(version, "sha256:") {
-		ref.Digest = version
+	if strings.HasPrefix(p.Version, "sha256:") {
+		ref.Digest = p.Version
 	} else {
-		ref.Tag = version
+		ref.Tag = p.Version
 	}
-	return &sourcev1.OCIRepository{
+	ociRepo := &sourcev1.OCIRepository{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      name,
-			Namespace: namespace,
+			Name:      p.Name,
+			Namespace: p.Namespace,
 		},
 		Spec: sourcev1.OCIRepositorySpec{
 			Interval: metav1.Duration{Duration: time.Minute},
-			URL:      EnsureOCIScheme(chartURL),
+			URL:      EnsureOCIScheme(p.ChartURL),
 			LayerSelector: &sourcev1.OCILayerSelector{
 				MediaType: "application/vnd.cncf.helm.chart.content.v1.tar+gzip",
 				Operation: sourcev1.OCILayerCopy,
@@ -64,6 +73,10 @@ func CreateOciRepository(chartURL, version, name, namespace string) *sourcev1.OC
 			Reference: ref,
 		},
 	}
+	if p.ChartPullSecretName != "" {
+		ociRepo.Spec.SecretRef = &meta.LocalObjectReference{Name: p.ChartPullSecretName}
+	}
+	return ociRepo
 }
 
 // EnsureOCIScheme prefixes url with "oci://" if not already present.
