@@ -8,5 +8,5 @@ spec:
     - version: "v3.8.2"
       chartVersion: "sha256:51a5a3e87e6c9dc254a7045f844dd46aadbdef2e78f27def39e9c5c363ea6265"
       chartURL: "oci://ghcr.io/openmcp-project/components/component-descriptors/github.com/openmcp-project/releasechannel/kyverno"
-      # values:
+      # helmValues:
         # TODO: configure controller images to be pulled from public releasechannel, see https://github.com/openmcp-project/releasechannel/issues/2
