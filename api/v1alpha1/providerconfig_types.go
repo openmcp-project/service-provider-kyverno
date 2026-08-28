@@ -56,7 +56,7 @@ type KyvernoVersion struct {
 	ChartVersion string `json:"chartVersion"`
 
 	// ChartURL is a reference to an OCI artifact repository that hosts the Kyverno Helm chart.
-	// Defaults to DefaultChartURL when unset.
+	// Defaults to "oci://ghcr.io/kyverno/charts/kyverno" when unset.
 	// +optional
 	ChartURL *string `json:"chartURL,omitempty"`
 
