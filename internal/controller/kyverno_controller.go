@@ -336,9 +336,15 @@ func (r *KyvernoReconciler) replicateImagePullSecrets(ctx context.Context, mcpCl
 		if err := r.PlatformCluster.Client().Get(ctx, client.ObjectKey{Name: ref.Name, Namespace: r.PodNamespace}, sourceSecret); err != nil {
 			return fmt.Errorf("failed to get image pull secret %q from namespace %q: %w", ref.Name, r.PodNamespace, err)
 		}
+
+		prefixedName, err := ctrlutils.ShortenToXCharacters(fmt.Sprintf("%s%s", secretNamePrefix, ref.Name), ctrlutils.K8sMaxNameLength)
+		if err != nil {
+			return fmt.Errorf("error generating prefixed secret name: %w", err)
+		}
+
 		targetSecret := &corev1.Secret{
 			ObjectMeta: metav1.ObjectMeta{
-				Name:      ref.Name,
+				Name:      prefixedName,
 				Namespace: KyvernoNamespace,
 			},
 		}
