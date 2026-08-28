@@ -22,17 +22,17 @@ flowchart LR
     subgraph TN[Tenant Namespace]
       ocirepo([OCIRepository])
       helmrel([HelmRelease])
+      chartpullsecret([Chart Pull Secret])
     end
   end
 
   subgraph OC[Onboarding Cluster]
     kyvernoapi([Kyverno])
-    mcpapi([ControlPlane])
-
-    kyvernoapi -- references --> mcpapi
+    cpapi([ControlPlane])
+    kyvernoapi -- references --> cpapi
   end
 
-  subgraph mcp[ControlPlane]
+  subgraph cp[ControlPlane]
     subgraph KS[kyverno namespace]
       kyvernoctrl[Kyverno Controllers]
       pullsecret([image-pull-secret])
@@ -44,7 +44,8 @@ flowchart LR
   spkyverno -- creates --> helmrel
   helmrel -- installs --> kyvernoctrl
   spkyverno -- copies secrets --> pullsecret
-  mcpapi -- represents --> mcp
+  spkyverno -- copies secrets --> chartpullsecret
+  cpapi -- represents --> cp
 ```
 
 ## 🚦 Getting Started
