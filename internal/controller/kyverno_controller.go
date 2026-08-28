@@ -423,7 +423,6 @@ func (r *KyvernoReconciler) createOrUpdateHelmRelease(ctx context.Context, names
 	helmRelease := flux.CreateHelmRelease(flux.HelmReleaseParams{
 		Name:             HelmReleaseName,
 		Namespace:        namespace,
-		ReleaseName:      apiv1alpha1.GetReleaseName(svcobj.Name), // TODO: is this right here?
 		TargetNamespace:  KyvernoNamespace,
 		StorageNamespace: KyvernoNamespace,
 		OCIRepoName:      OCIRepositoryName,
