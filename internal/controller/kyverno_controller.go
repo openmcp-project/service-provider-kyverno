@@ -55,7 +55,7 @@ const (
 	// managedByLabelKey / managedByLabelValue mark secrets that were replicated by this controller
 	// so they can be identified and cleaned up when no longer needed.
 	managedByLabelKey   = "app.kubernetes.io/managed-by"
-	managedByLabelValue = "sp-kyverno"
+	managedByLabelValue = "service-provider-kyverno"
 	// HelmReleaseName is the name of the Helm release used to deploy Kyverno in the onboarding cluster.
 	HelmReleaseName = "kyverno"
 	// OCIRepositoryName is the name of the OCI repository where the Kyverno Helm chart is stored.
