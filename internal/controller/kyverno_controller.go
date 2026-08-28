@@ -141,7 +141,7 @@ func (r *KyvernoReconciler) CreateOrUpdate(ctx context.Context, svcobj *apiv1alp
 		return ctrl.Result{}, fmt.Errorf("failed to clean up orphan secrets in kyverno namespace on MCP: %w", err)
 	}
 
-	if err := r.createOrUpdateOCIRepository(ctx, svcobj, clusters, tenantNamespace, kyvernoVersion, prefixedChartPullSecret); err != nil {
+	if err := r.createOrUpdateOCIRepository(ctx, tenantNamespace, kyvernoVersion, prefixedChartPullSecret); err != nil {
 		internalstatus.Failed(svcobj, err.Error())
 		return ctrl.Result{}, fmt.Errorf("failed to reconcile OCIRepository: %w", err)
 	}
@@ -388,8 +388,7 @@ func deleteOrphanSecrets(ctx context.Context, c client.Client, namespace string,
 	return nil
 }
 
-// TODO: make simpler
-func (r *KyvernoReconciler) createOrUpdateOCIRepository(ctx context.Context, _ *apiv1alpha1.Kyverno, _ spclusteraccess.ClusterContext, namespace string, kyvernoVersion apiv1alpha1.KyvernoVersion, chartPullSecretName string) error {
+func (r *KyvernoReconciler) createOrUpdateOCIRepository(ctx context.Context, namespace string, kyvernoVersion apiv1alpha1.KyvernoVersion, chartPullSecretName string) error {
 	ociRepo := flux.CreateOCIRepository(flux.OCIRepositoryParams{
 		ChartURL:            kyvernoVersion.GetChartURL(),
 		Version:             kyvernoVersion.ChartVersion,
