@@ -101,25 +101,16 @@ func (r *KyvernoReconciler) CreateOrUpdate(ctx context.Context, svcobj *apiv1alp
 	}
 	l.Info("Checking tenant namespace", "namespace", tenantNamespace)
 
+	if clusters.MCPCluster == nil {
+		internalstatus.Failed(svcobj, "ControlPlane cluster context is nil")
+		return ctrl.Result{}, fmt.Errorf("ControlPlane cluster context is nil")
+	}
+
+	// 1. Replicate Chart Pull Secret to tenant namespace on Platform cluster
 	prefixedChartPullSecret, err := r.replicateChartPullSecret(ctx, kyvernoVersion, tenantNamespace)
 	if err != nil {
 		internalstatus.Failed(svcobj, err.Error())
 		return ctrl.Result{}, fmt.Errorf("failed to replicate chart pull secret: %w", err)
-	}
-
-	helmValues, err := helm.ExtractHelmValues(kyvernoVersion.HelmValues)
-	if err != nil {
-		internalstatus.Failed(svcobj, err.Error())
-		return ctrl.Result{}, fmt.Errorf("failed to extract helm values: %w", err)
-	}
-
-	if clusters.MCPCluster == nil {
-		internalstatus.Failed(svcobj, "ControlPlane cluster context is nil")
-		return ctrl.Result{}, fmt.Errorf("ControlPlane cluster context is nil, cannot replicate image pull secrets")
-	}
-	if err := r.replicateImagePullSecrets(ctx, clusters.MCPCluster.Client(), helmValues); err != nil {
-		internalstatus.Failed(svcobj, err.Error())
-		return ctrl.Result{}, fmt.Errorf("failed to replicate image pull secrets: %w", err)
 	}
 
 	// clean up any managed secrets in the tenant namespace that are no longer desired
@@ -130,6 +121,13 @@ func (r *KyvernoReconciler) CreateOrUpdate(ctx context.Context, svcobj *apiv1alp
 	if err := deleteOrphanSecrets(ctx, r.PlatformCluster.Client(), tenantNamespace, desiredPlatformSecrets); err != nil {
 		internalstatus.Failed(svcobj, err.Error())
 		return ctrl.Result{}, fmt.Errorf("failed to clean up orphan secrets in tenant namespace: %w", err)
+	}
+
+	// 2. Extract Helm Values to delet orphan secrets on the ControlPlane cluster
+	helmValues, err := helm.ExtractHelmValues(kyvernoVersion.HelmValues)
+	if err != nil {
+		internalstatus.Failed(svcobj, err.Error())
+		return ctrl.Result{}, fmt.Errorf("failed to extract helm values: %w", err)
 	}
 
 	desiredControlPlaneSecrets := make([]string, 0, len(helmValues.Global.ImagePullSecrets))
@@ -145,15 +143,24 @@ func (r *KyvernoReconciler) CreateOrUpdate(ctx context.Context, svcobj *apiv1alp
 		return ctrl.Result{}, fmt.Errorf("failed to clean up orphan secrets in kyverno namespace on MCP: %w", err)
 	}
 
+	// 3. Create or update OCIRepository object
 	if err := r.createOrUpdateOCIRepository(ctx, tenantNamespace, kyvernoVersion, prefixedChartPullSecret); err != nil {
 		internalstatus.Failed(svcobj, err.Error())
 		return ctrl.Result{}, fmt.Errorf("failed to reconcile OCIRepository: %w", err)
 	}
 
+	// 4. Create or update HelmRelease object
 	if err := r.createOrUpdateHelmRelease(ctx, tenantNamespace, svcobj, kyvernoVersion); err != nil {
 		internalstatus.Failed(svcobj, err.Error())
 		return ctrl.Result{}, fmt.Errorf("failed to reconcile HelmRelease: %w", err)
 	}
+
+	// 5. Replicate image pull secrets to ControlPlane cluster
+	if err := r.replicateImagePullSecrets(ctx, clusters.MCPCluster.Client(), helmValues); err != nil {
+		internalstatus.Failed(svcobj, err.Error())
+		return ctrl.Result{}, fmt.Errorf("failed to replicate image pull secrets: %w", err)
+	}
+
 	l.Info("Done Reconciling Kyverno resource", "name", svcobj.Name)
 	return r.reconcileHelmReleaseStatus(ctx, svcobj, tenantNamespace)
 }
