@@ -134,7 +134,11 @@ func (r *KyvernoReconciler) CreateOrUpdate(ctx context.Context, svcobj *apiv1alp
 
 	desiredControlPlaneSecrets := make([]string, 0, len(helmValues.Global.ImagePullSecrets))
 	for _, ref := range helmValues.Global.ImagePullSecrets {
-		desiredControlPlaneSecrets = append(desiredControlPlaneSecrets, ref.Name)
+		prefixedName, err := prefixedSecretName(ref.Name)
+		if err != nil {
+			return ctrl.Result{}, fmt.Errorf("error generating prefixed secret name: %w", err)
+		}
+		desiredControlPlaneSecrets = append(desiredControlPlaneSecrets, prefixedName)
 	}
 	if err := deleteOrphanSecrets(ctx, clusters.MCPCluster.Client(), KyvernoNamespace, desiredControlPlaneSecrets); err != nil {
 		internalstatus.Failed(svcobj, err.Error())
@@ -297,7 +301,7 @@ func (r *KyvernoReconciler) replicateChartPullSecret(ctx context.Context, kyvern
 	if kyvernoVersion.ChartPullSecret == "" {
 		return "", nil
 	}
-	prefixedName, err := ctrlutils.ShortenToXCharacters(fmt.Sprintf("%s%s", secretNamePrefix, kyvernoVersion.ChartPullSecret), ctrlutils.K8sMaxNameLength)
+	prefixedName, err := prefixedSecretName(kyvernoVersion.ChartPullSecret)
 	if err != nil {
 		return "", fmt.Errorf("error generating prefixed secret name: %w", err)
 	}
@@ -330,6 +334,10 @@ func (r *KyvernoReconciler) replicateChartPullSecret(ctx context.Context, kyvern
 	return prefixedName, nil
 }
 
+func prefixedSecretName(name string) (string, error) {
+	return ctrlutils.ShortenToXCharacters(fmt.Sprintf("%s%s", secretNamePrefix, name), ctrlutils.K8sMaxNameLength)
+}
+
 func (r *KyvernoReconciler) replicateImagePullSecrets(ctx context.Context, mcpClient client.Client, helmValues *helm.Values) error {
 	for _, ref := range helmValues.Global.ImagePullSecrets {
 		sourceSecret := &corev1.Secret{}
@@ -337,7 +345,7 @@ func (r *KyvernoReconciler) replicateImagePullSecrets(ctx context.Context, mcpCl
 			return fmt.Errorf("failed to get image pull secret %q from namespace %q: %w", ref.Name, r.PodNamespace, err)
 		}
 
-		prefixedName, err := ctrlutils.ShortenToXCharacters(fmt.Sprintf("%s%s", secretNamePrefix, ref.Name), ctrlutils.K8sMaxNameLength)
+		prefixedName, err := prefixedSecretName(ref.Name)
 		if err != nil {
 			return fmt.Errorf("error generating prefixed secret name: %w", err)
 		}
