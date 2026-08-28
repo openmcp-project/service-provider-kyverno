@@ -405,6 +405,10 @@ func (r *KyvernoReconciler) createOrUpdateOCIRepository(ctx context.Context, nam
 	l := logf.FromContext(ctx)
 	l.Info("Creating OCI Repository", "object", ociRepo)
 	if _, err := ctrl.CreateOrUpdate(ctx, r.PlatformCluster.Client(), managedObj, func() error {
+		if managedObj.Labels == nil {
+			managedObj.Labels = map[string]string{}
+		}
+		managedObj.Labels[managedByLabelKey] = managedByLabelValue
 		managedObj.Spec = ociRepo.Spec
 		return nil
 	}); err != nil {
@@ -442,6 +446,10 @@ func (r *KyvernoReconciler) createOrUpdateHelmRelease(ctx context.Context, names
 	l := logf.FromContext(ctx)
 	l.Info("Creating HelmRelease", "object", managedObj)
 	if _, err := ctrl.CreateOrUpdate(ctx, r.PlatformCluster.Client(), managedObj, func() error {
+		if managedObj.Labels == nil {
+			managedObj.Labels = map[string]string{}
+		}
+		managedObj.Labels[managedByLabelKey] = managedByLabelValue
 		managedObj.Spec = helmRelease.Spec
 		return nil
 	}); err != nil {
