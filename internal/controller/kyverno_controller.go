@@ -429,6 +429,9 @@ func (r *KyvernoReconciler) createOrUpdateHelmRelease(ctx context.Context, names
 		OCIRepoNamespace: namespace,
 		Values:           kyvernoVersion.HelmValues,
 		KubeConfigRef:    fluxConfigRef,
+		DriftDetection: &helmv2.DriftDetection{
+			Mode: helmv2.DriftDetectionEnabled,
+		},
 	})
 	managedObj := &helmv2.HelmRelease{
 		ObjectMeta: metav1.ObjectMeta{

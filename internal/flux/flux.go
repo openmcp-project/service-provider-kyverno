@@ -39,6 +39,7 @@ type HelmReleaseParams struct {
 	OCIRepoNamespace string
 	Values           *apiextensionsv1.JSON
 	KubeConfigRef    *meta.SecretKeyReference
+	DriftDetection   *helmv2.DriftDetection
 }
 
 // OCIRepositoryParams holds all inputs needed to construct an OCIRepository.
@@ -115,6 +116,7 @@ func CreateHelmRelease(p HelmReleaseParams) *helmv2.HelmRelease {
 					Strategy: &remediationStrategy,
 				},
 			},
+			DriftDetection: p.DriftDetection,
 			ChartRef: &helmv2.CrossNamespaceSourceReference{
 				Kind:      "OCIRepository",
 				Name:      p.OCIRepoName,
