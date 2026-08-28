@@ -8,7 +8,7 @@ This document describes how to set up a local development environment for the `s
 
 ## Architecture
 
-The local environment mirrors the production openMCP topology using three kind clusters running as sibling containers inside Docker Desktop's Linux VM:
+The local environment mirrors the production OpenControlPlane topology using three kind clusters running as sibling containers inside Docker Desktop's Linux VM:
 
 ```
 Mac Host (Apple Silicon / Intel)
@@ -26,7 +26,7 @@ All three clusters communicate over the `kind` Docker bridge network. The platfo
 |-----------|---------|---------|
 | `openmcp-operator` | platform | Watches `Cluster`, `ClusterProvider`, `ServiceProvider` CRs; orchestrates the platform |
 | `cluster-provider-kind` | platform | Receives `ClusterRequest` CRs; creates/deletes sibling kind clusters via Docker |
-| `service-provider-kyverno` (your controller) | local Mac (`make run`) | Watches `KyvernoService` CRs on onboarding cluster; installs Kyverno on MCP clusters |
+| `service-provider-kyverno` (your controller) | local Mac (`make run`) | Watches `KyvernoService` CRs on onboarding cluster; installs Kyverno on `ControlPlane` clusters |
 | Kyverno | mcp-* | The actual policy engine installed by the SP |
 
 ### Inner dev loop
@@ -45,9 +45,9 @@ task build:img:build-test        # builds + tags image for local arch
 apply KyvernoService CR to onboarding cluster and observe
 ```
 
-### MCP cluster lifecycle
+### `ControlPlane` cluster lifecycle
 
-The MCP cluster does not exist at rest — it is created on demand:
+The `ControlPlane` cluster does not exist at rest — it is created on demand:
 
 ```
 kubectl apply -f config/samples/kyvernoservice.yaml  (to onboarding cluster)
@@ -98,7 +98,7 @@ task build:img:build-test
 kubectl config use-context kind-<onboarding-cluster-name>
 kubectl apply -f config/samples/kyvernoservice.yaml
 
-# 4. Watch the MCP cluster get created and Kyverno installed
+# 4. Watch the ControlPlane cluster get created and Kyverno installed
 kind get clusters
 kubectl get pods -A --context kind-<mcp-cluster-name>
 ```
@@ -144,7 +144,7 @@ task build:img:build-test && ./dev.sh setup-sp
 
 All kind clusters are attached to the `kind` Docker bridge network (created by `dev.sh` if it doesn't exist). The platform cluster API server listens on `0.0.0.0:6443` inside its container, and kind maps this to `127.0.0.1:6443` on the Mac host. The kubeconfig is patched to use `127.0.0.1:6443` with TLS verification disabled (the cert SANs don't include `127.0.0.1`).
 
-The `cluster-provider-kind` pod on the platform cluster creates onboarding and MCP clusters by talking to Docker via `/var/run/docker.sock`, which is mapped from the Mac host's Docker socket at `/var/run/host-docker.sock` inside the kind node.
+The `cluster-provider-kind` pod on the platform cluster creates onboarding and `ControlPlane` clusters by talking to Docker via `/var/run/docker.sock`, which is mapped from the Mac host's Docker socket at `/var/run/host-docker.sock` inside the kind node.
 
 ---
 

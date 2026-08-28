@@ -114,8 +114,8 @@ func (r *KyvernoReconciler) CreateOrUpdate(ctx context.Context, svcobj *apiv1alp
 	}
 
 	if clusters.MCPCluster == nil {
-		internalstatus.Failed(svcobj, "MCP cluster context is nil")
-		return ctrl.Result{}, fmt.Errorf("MCP cluster context is nil, cannot replicate image pull secrets")
+		internalstatus.Failed(svcobj, "ControlPlane cluster context is nil")
+		return ctrl.Result{}, fmt.Errorf("ControlPlane cluster context is nil, cannot replicate image pull secrets")
 	}
 	if err := r.replicateImagePullSecrets(ctx, clusters.MCPCluster.Client(), helmValues); err != nil {
 		internalstatus.Failed(svcobj, err.Error())
@@ -231,7 +231,7 @@ func (r *KyvernoReconciler) Delete(ctx context.Context, obj *apiv1alpha1.Kyverno
 		}
 	}
 	if clusterCtx.MCPCluster == nil {
-		panic("MCP cluster context is nil, expected it to be set in Delete()")
+		panic("ControlPlane cluster context is nil, expected it to be set in Delete()")
 	}
 
 	objectsToDelete := objectsForDeletion(tenantNamespace)
@@ -357,7 +357,7 @@ func (r *KyvernoReconciler) replicateImagePullSecrets(ctx context.Context, mcpCl
 			targetSecret.Type = sourceSecret.Type
 			return nil
 		}); err != nil {
-			return fmt.Errorf("failed to replicate image pull secret %q to namespace %q on MCP: %w", ref.Name, KyvernoNamespace, err)
+			return fmt.Errorf("failed to replicate image pull secret %q to namespace %q on ControlPlane: %w", ref.Name, KyvernoNamespace, err)
 		}
 	}
 	return nil
@@ -417,7 +417,7 @@ func (r *KyvernoReconciler) createOrUpdateOCIRepository(ctx context.Context, nam
 func (r *KyvernoReconciler) createOrUpdateHelmRelease(ctx context.Context, namespace string, svcobj *apiv1alpha1.Kyverno, kyvernoVersion apiv1alpha1.KyvernoVersion) error {
 	fluxConfigRef, err := r.getControlPlaneFluxConfig(ctx, namespace, svcobj.Name)
 	if err != nil {
-		return fmt.Errorf("failed to get FluxConfig for MCP cluster: %w", err)
+		return fmt.Errorf("failed to get FluxConfig for ControlPlane cluster: %w", err)
 	}
 
 	helmRelease := flux.CreateHelmRelease(flux.HelmReleaseParams{
