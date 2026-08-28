@@ -345,7 +345,7 @@ func prefixedSecretName(name string) (string, error) {
 	return ctrlutils.ShortenToXCharacters(fmt.Sprintf("%s%s", secretNamePrefix, name), ctrlutils.K8sMaxNameLength)
 }
 
-func (r *KyvernoReconciler) replicateImagePullSecrets(ctx context.Context, mcpClient client.Client, helmValues *helm.Values) error {
+func (r *KyvernoReconciler) replicateImagePullSecrets(ctx context.Context, cpClient client.Client, helmValues *helm.Values) error {
 	for _, ref := range helmValues.Global.ImagePullSecrets {
 		sourceSecret := &corev1.Secret{}
 		if err := r.PlatformCluster.Client().Get(ctx, client.ObjectKey{Name: ref.Name, Namespace: r.PodNamespace}, sourceSecret); err != nil {
@@ -363,7 +363,7 @@ func (r *KyvernoReconciler) replicateImagePullSecrets(ctx context.Context, mcpCl
 				Namespace: KyvernoNamespace,
 			},
 		}
-		if _, err := ctrl.CreateOrUpdate(ctx, mcpClient, targetSecret, func() error {
+		if _, err := ctrl.CreateOrUpdate(ctx, cpClient, targetSecret, func() error {
 			if targetSecret.Labels == nil {
 				targetSecret.Labels = map[string]string{}
 			}
