@@ -166,8 +166,8 @@ spec:
 | `spec.versions[].version`          | string   | Kyverno version string that maps to `Kyverno.spec.version`                           |
 | `spec.versions[].chartVersion`     | string   | Helm chart version or digest to install                                              |
 | `spec.versions[].chartURL`         | string   | OCI registry URL for the Helm chart (default: `oci://ghcr.io/kyverno/charts/kyverno`) |
-| `spec.versions[].chartPullSecret`  | string   | Secret name for chart registry authentication (replicated into tenant namespace)     |
-| `spec.versions[].helmValues`       | object   | Custom Helm values passed directly to the managed HelmRelease                        |
+| `spec.versions[].chartPullSecret`  | string   | Secret name for chart registry authentication. Replicated into the tenant namespace with a `sp-kyverno-` prefix and cleaned up when the `Kyverno` resource is deleted. |
+| `spec.versions[].helmValues`       | object   | Arbitrary Helm values passed to the managed HelmRelease. Any secrets named in `helmValues.global.imagePullSecrets` are also replicated (prefixed `sp-kyverno-`) into the `kyverno` namespace on the ControlPlane cluster and cleaned up on deletion. |
 
 ## 🔧 Development Tasks
 
