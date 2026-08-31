@@ -22,17 +22,17 @@ flowchart LR
     subgraph TN[Tenant Namespace]
       ocirepo([OCIRepository])
       helmrel([HelmRelease])
+      chartpullsecret([Chart Pull Secret])
     end
   end
 
   subgraph OC[Onboarding Cluster]
     kyvernoapi([Kyverno])
-    mcpapi([ControlPlane])
-
-    kyvernoapi -- references --> mcpapi
+    cpapi([ControlPlane])
+    kyvernoapi -- references --> cpapi
   end
 
-  subgraph mcp[ControlPlane]
+  subgraph cp[ControlPlane]
     subgraph KS[kyverno namespace]
       kyvernoctrl[Kyverno Controllers]
       pullsecret([image-pull-secret])
@@ -44,7 +44,8 @@ flowchart LR
   spkyverno -- creates --> helmrel
   helmrel -- installs --> kyvernoctrl
   spkyverno -- copies secrets --> pullsecret
-  mcpapi -- represents --> mcp
+  spkyverno -- copies secrets --> chartpullsecret
+  cpapi -- represents --> cp
 ```
 
 ## 🚦 Getting Started
@@ -145,22 +146,29 @@ metadata:
 spec:
   # Optional: Reconciliation interval
   pollInterval: "1m"
-  # Optional: OCI URL of the Kyverno Helm chart
-  chartURL: "oci://ghcr.io/kyverno/charts"
-  # Optional: Secret for private chart registry
-  imagePullSecret:
-    name: "image-registry-credentials"
-  # Optional: Custom Helm values passed directly to the HelmRelease
-  values:
-    replicaCount: 3
+  # Required: list of installable Kyverno versions
+  versions:
+    - version: "v3.3.7"
+      chartVersion: "3.3.7"
+      # Optional: OCI URL of the Kyverno Helm chart
+      chartURL: "oci://ghcr.io/kyverno/charts/kyverno"
+      # Optional: Secret for private chart registry (must exist in the controller namespace)
+      chartPullSecret: "image-registry-credentials"
+      # Optional: Custom Helm values passed directly to the managed HelmRelease
+      helmValues:
+        global:
+          imagePullSecrets:
+            - name: "image-registry-credentials"
 ```
 
-| Field                | Type   | Description                                                                     |
-| -------------------- | ------ | ------------------------------------------------------------------------------- |
-| `spec.pollInterval`  | duration | How often to reconcile resources (default: `1m`)                              |
-| `spec.chartURL`      | string | OCI registry URL for the Kyverno Helm chart (default: `ghcr.io/kyverno/charts`) |
-| `spec.imagePullSecret` | object | Secret name for chart registry authentication                                 |
-| `spec.values`        | object | Custom Helm values passed directly to the managed HelmRelease                   |
+| Field                             | Type     | Description                                                                                                                                                                                                                                          |
+| --------------------------------- | -------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `spec.pollInterval`               | duration | How often to reconcile resources (default: `1m`)                                                                                                                                                                                                     |
+| `spec.versions[].version`         | string   | Kyverno version string that maps to `Kyverno.spec.version`                                                                                                                                                                                           |
+| `spec.versions[].chartVersion`    | string   | Helm chart version or digest to install                                                                                                                                                                                                              |
+| `spec.versions[].chartURL`        | string   | OCI registry URL for the Helm chart (default: `oci://ghcr.io/kyverno/charts/kyverno`)                                                                                                                                                                |
+| `spec.versions[].chartPullSecret` | string   | Secret name for chart registry authentication. Replicated into the tenant namespace with a `sp-kyverno-` prefix and cleaned up when the `Kyverno` resource is deleted.                                                                               |
+| `spec.versions[].helmValues`      | object   | Arbitrary Helm values passed to the managed HelmRelease. Any secrets named in `helmValues.global.imagePullSecrets` are also replicated (prefixed `sp-kyverno-`) into the `kyverno` namespace on the ControlPlane cluster and cleaned up on deletion. |
 
 ## 🔧 Development Tasks
 
@@ -177,16 +185,16 @@ spec:
 
 [![Quality: Incubating](https://img.shields.io/badge/Quality-Incubating-3d9970?style=flat-square&labelColor=555)](https://open-control-plane.io/developers/serviceprovider/quality-criteria)
 
-| Criterion                         | Status | Notes                                                                                                                                                                                                                                                                                                                      |
-| --------------------------------- | :----: | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Deletion behaviour                |   ❌    | The delete case is still work-in-progress. A finalizer ensures the Service Provider managed resources like Flux' `OCIRepository` and `HelmRelease` are cleaned-up. But there is no behaviour that ensures deletion is blocked if custom resources (e.g. Kyverno' `ClusterPolicy` objects) in a `ControlPlane` still exist. |
-| Status reporting & error messages |   ✅    |                                                                                                                                                                                                                                                                                                                            |
-| Operation annotations             |   ⚠️    | `openmcp.cloud/operation: ignore` is processed by [opencontrolplane-runtime](https://github.com/openmcp-project/opencontrolplane-runtime). `openmcp.cloud/operation: reconcile` is not processed.                                                                                                                          |
-| API stability policy              |   ✅    |                                                                                                                                                                                                                                                                                                                            |
-| Custom CA support                 |   ❌    | Custom CA bundle propagation to Kyverno components is not implemented.                                                                                                                                                                                                                                                     |
-| Release artifacts (image + OCM)   |   ✅    |                                                                                                                                                                                                                                                                                                                            |
-| Testing                           |   ✅    |                                                                                                                                                                                                                                                                                                                            |
-| Ownership and maintenance docs    |   ✅    |                                                                                                                                                                                                                                                                                                                            |
+| Criterion                         | Status | Notes                                                                                                                                                                                             |
+| --------------------------------- | :----: | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Deletion behaviour                |   ✅    |                                                                                                                                                                                                   |
+| Status reporting & error messages |   ✅    |                                                                                                                                                                                                   |
+| Operation annotations             |   ⚠️    | `openmcp.cloud/operation: ignore` is processed by [opencontrolplane-runtime](https://github.com/openmcp-project/opencontrolplane-runtime). `openmcp.cloud/operation: reconcile` is not processed. |
+| API stability policy              |   ✅    |                                                                                                                                                                                                   |
+| Custom CA support                 |   ❌    | Custom CA bundle propagation to Kyverno components is not implemented.                                                                                                                            |
+| Release artifacts (image + OCM)   |   ✅    |                                                                                                                                                                                                   |
+| Testing                           |   ✅    |                                                                                                                                                                                                   |
+| Ownership and maintenance docs    |   ✅    |                                                                                                                                                                                                   |
 
 See the [OpenControlPlane Quality Criteria](https://open-control-plane.io/developers/serviceprovider/quality-criteria) for definitions.
 

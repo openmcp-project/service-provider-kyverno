@@ -17,6 +17,7 @@ limitations under the License.
 package v1alpha1
 
 import (
+	commonapi "github.com/openmcp-project/openmcp-operator/api/common"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	runtime "k8s.io/apimachinery/pkg/runtime"
 )
@@ -26,40 +27,16 @@ import (
 
 // KyvernoSpec defines the desired state of Kyverno
 type KyvernoSpec struct {
-	// INSERT ADDITIONAL SPEC FIELDS - desired state of cluster
-	// Important: Run "make" to regenerate code after modifying this file
-	// The following markers will use OpenAPI v3 schema to validate the value
-	// More info: https://book.kubebuilder.io/reference/markers/crd-validation.html
 
+	// Version is the Kyverno version to install.
 	// +kubebuilder:validation:Required
 	Version string `json:"version"`
 }
 
 // KyvernoStatus defines the observed state of Kyverno.
 type KyvernoStatus struct {
-	// INSERT ADDITIONAL STATUS FIELD - define observed state of cluster
-	// Important: Run "make" to regenerate code after modifying this file
+	commonapi.Status `json:",inline"`
 
-	// For Kubernetes API conventions, see:
-	// https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/api-conventions.md#typical-status-properties
-
-	// conditions represent the current state of the Kyverno resource.
-	// Each condition has a unique type and reflects the status of a specific aspect of the resource.
-	//
-	// Standard condition types include:
-	// - "Available": the resource is fully functional
-	// - "Progressing": the resource is being created or updated
-	// - "Degraded": the resource failed to reach or maintain its desired state
-	//
-	// The status of each condition is one of True, False, or Unknown.
-	// +listType=map
-	// +listMapKey=type
-	// +optional
-	Conditions []metav1.Condition `json:"conditions,omitempty"`
-	// ObservedGeneration is the generation of this resource that was last reconciled by the controller.
-	ObservedGeneration int64 `json:"observedGeneration"`
-	// Phase is the current phase of the resource.
-	Phase string `json:"phase"`
 	// HelmReleaseFailureCount tracks the number of consecutive times the HelmRelease
 	// reported a failed condition. The controller will stop retrying after a fixed threshold.
 	// +optional

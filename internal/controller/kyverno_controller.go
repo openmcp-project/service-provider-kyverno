@@ -23,6 +23,8 @@ import (
 
 	"github.com/fluxcd/pkg/apis/meta"
 	"github.com/openmcp-project/controller-utils/pkg/clusters"
+	ctrlutils "github.com/openmcp-project/controller-utils/pkg/controller"
+	ctrlerrors "github.com/openmcp-project/controller-utils/pkg/errors"
 	clustersv1alpha1 "github.com/openmcp-project/openmcp-operator/api/clusters/v1alpha1"
 	"github.com/openmcp-project/openmcp-operator/lib/clusteraccess"
 	libutils "github.com/openmcp-project/openmcp-operator/lib/utils"
@@ -43,10 +45,17 @@ import (
 
 	apiv1alpha1 "github.com/openmcp-project/service-provider-kyverno/api/v1alpha1"
 	"github.com/openmcp-project/service-provider-kyverno/internal/flux"
+	"github.com/openmcp-project/service-provider-kyverno/internal/helm"
 	internalstatus "github.com/openmcp-project/service-provider-kyverno/internal/status"
 )
 
 const (
+	// secretNamePrefix is the prefix used for secrets replicated into tenant namespaces.
+	secretNamePrefix = "sp-kyverno-"
+	// managedByLabelKey / managedByLabelValue mark secrets that were replicated by this controller
+	// so they can be identified and cleaned up when no longer needed.
+	managedByLabelKey   = "app.kubernetes.io/managed-by"
+	managedByLabelValue = "service-provider-kyverno"
 	// HelmReleaseName is the name of the Helm release used to deploy Kyverno in the onboarding cluster.
 	HelmReleaseName = "kyverno"
 	// OCIRepositoryName is the name of the OCI repository where the Kyverno Helm chart is stored.
@@ -74,30 +83,84 @@ type KyvernoReconciler struct {
 }
 
 // CreateOrUpdate is called on every add or update event
+// nolint:gocyclo
 func (r *KyvernoReconciler) CreateOrUpdate(ctx context.Context, svcobj *apiv1alpha1.Kyverno, providerConfig *apiv1alpha1.ProviderConfig, clusters spclusteraccess.ClusterContext) (ctrl.Result, error) {
 	l := logf.FromContext(ctx)
 	l.Info("Reconciling Kyverno resource", "name", svcobj.Name, "namespace", svcobj.Namespace)
 	serviceprovider.StatusProgressing(svcobj, "Reconciling", "Reconcile in progress")
+
+	kyvernoVersion, err := providerConfig.SelectVersion(svcobj.Spec.Version)
+	if err != nil {
+		internalstatus.Failed(svcobj, err.Error())
+		return ctrl.Result{}, ctrlerrors.IgnoreInvalidUserInput(err)
+	}
+
 	tenantNamespace, err := libutils.StableMCPNamespace(svcobj.Name, svcobj.Namespace)
 	if err != nil {
 		return ctrl.Result{}, fmt.Errorf("failed to determine stable namespace for Kyverno instance: %w", err)
 	}
 	l.Info("Checking tenant namespace", "namespace", tenantNamespace)
 
-	if err = r.replicateImagePullSecret(ctx, providerConfig, tenantNamespace); err != nil {
-		internalstatus.Failed(svcobj, err.Error())
-		return ctrl.Result{}, fmt.Errorf("failed to replicate image pull secret: %w", err)
+	if clusters.MCPCluster == nil {
+		internalstatus.Failed(svcobj, "ControlPlane cluster context is nil")
+		return ctrl.Result{}, fmt.Errorf("ControlPlane cluster context is nil")
 	}
 
-	if err := r.createOrUpdateOciRepository(ctx, svcobj, clusters, tenantNamespace, providerConfig); err != nil {
+	// 1. Replicate Chart Pull Secret to tenant namespace on Platform cluster
+	prefixedChartPullSecret, err := r.replicateChartPullSecret(ctx, kyvernoVersion, tenantNamespace)
+	if err != nil {
+		internalstatus.Failed(svcobj, err.Error())
+		return ctrl.Result{}, fmt.Errorf("failed to replicate chart pull secret: %w", err)
+	}
+
+	// 2. Extract Helm Values
+	helmValues, err := helm.ExtractHelmValues(kyvernoVersion.HelmValues)
+	if err != nil {
+		internalstatus.Failed(svcobj, err.Error())
+		return ctrl.Result{}, fmt.Errorf("failed to extract helm values: %w", err)
+	}
+
+	// 3. Create or update OCIRepository object
+	if err := r.createOrUpdateOCIRepository(ctx, tenantNamespace, kyvernoVersion, prefixedChartPullSecret); err != nil {
 		internalstatus.Failed(svcobj, err.Error())
 		return ctrl.Result{}, fmt.Errorf("failed to reconcile OCIRepository: %w", err)
 	}
 
-	if err := r.createOrUpdateHelmRelease(ctx, tenantNamespace, svcobj, providerConfig); err != nil {
+	// 4. Create or update HelmRelease object
+	if err := r.createOrUpdateHelmRelease(ctx, tenantNamespace, svcobj, kyvernoVersion); err != nil {
 		internalstatus.Failed(svcobj, err.Error())
 		return ctrl.Result{}, fmt.Errorf("failed to reconcile HelmRelease: %w", err)
 	}
+
+	// 5. Replicate image pull secrets to ControlPlane cluster
+	if err := r.replicateImagePullSecrets(ctx, clusters.MCPCluster.Client(), helmValues); err != nil {
+		internalstatus.Failed(svcobj, err.Error())
+		return ctrl.Result{}, fmt.Errorf("failed to replicate image pull secrets: %w", err)
+	}
+
+	// 6. Clean up orphan secrets after all updates
+	desiredPlatformSecrets := []string{}
+	if prefixedChartPullSecret != "" {
+		desiredPlatformSecrets = append(desiredPlatformSecrets, prefixedChartPullSecret)
+	}
+	if err := deleteOrphanSecrets(ctx, r.PlatformCluster.Client(), tenantNamespace, desiredPlatformSecrets); err != nil {
+		internalstatus.Failed(svcobj, err.Error())
+		return ctrl.Result{}, fmt.Errorf("failed to clean up orphan secrets in tenant namespace: %w", err)
+	}
+
+	desiredControlPlaneSecrets := make([]string, 0, len(helmValues.Global.ImagePullSecrets))
+	for _, ref := range helmValues.Global.ImagePullSecrets {
+		prefixedName, err := prefixedSecretName(ref.Name)
+		if err != nil {
+			return ctrl.Result{}, fmt.Errorf("error generating prefixed secret name: %w", err)
+		}
+		desiredControlPlaneSecrets = append(desiredControlPlaneSecrets, prefixedName)
+	}
+	if err := deleteOrphanSecrets(ctx, clusters.MCPCluster.Client(), KyvernoNamespace, desiredControlPlaneSecrets); err != nil {
+		internalstatus.Failed(svcobj, err.Error())
+		return ctrl.Result{}, fmt.Errorf("failed to clean up orphan secrets in kyverno namespace on MCP: %w", err)
+	}
+
 	l.Info("Done Reconciling Kyverno resource", "name", svcobj.Name)
 	return r.reconcileHelmReleaseStatus(ctx, svcobj, tenantNamespace)
 }
@@ -157,6 +220,7 @@ func (r *KyvernoReconciler) handleHelmReleaseFailure(svcobj *apiv1alpha1.Kyverno
 }
 
 // Delete is called in reconciliation when the Kyverno resource is marked for deletion
+// nolint:gocyclo
 func (r *KyvernoReconciler) Delete(ctx context.Context, obj *apiv1alpha1.Kyverno, _ *apiv1alpha1.ProviderConfig, clusterCtx spclusteraccess.ClusterContext) (ctrl.Result, error) {
 	// mark for deletion
 	serviceprovider.StatusTerminating(obj)
@@ -178,10 +242,10 @@ func (r *KyvernoReconciler) Delete(ctx context.Context, obj *apiv1alpha1.Kyverno
 		}
 	}
 	if clusterCtx.MCPCluster == nil {
-		panic("MCP cluster context is nil, expected it to be set in Delete()")
+		panic("ControlPlane cluster context is nil, expected it to be set in Delete()")
 	}
 
-	objectsToDelete := fluxObjectsForDeletion(tenantNamespace)
+	objectsToDelete := objectsForDeletion(tenantNamespace)
 	var deletedObjects []client.Object
 	for _, object := range objectsToDelete {
 		err := r.PlatformCluster.Client().Delete(ctx, object)
@@ -194,18 +258,24 @@ func (r *KyvernoReconciler) Delete(ctx context.Context, obj *apiv1alpha1.Kyverno
 		}
 	}
 	if len(deletedObjects) == len(objectsToDelete) {
-		// all objects are deleted
+		// all objects are deleted; clean up replicated secrets
+		if err := deleteOrphanSecrets(ctx, r.PlatformCluster.Client(), tenantNamespace, nil); err != nil {
+			return ctrl.Result{}, fmt.Errorf("failed to clean up secrets in tenant namespace: %w", err)
+		}
+		if err := deleteOrphanSecrets(ctx, clusterCtx.MCPCluster.Client(), KyvernoNamespace, nil); err != nil {
+			return ctrl.Result{}, fmt.Errorf("failed to clean up secrets in kyverno namespace on MCP: %w", err)
+		}
 		return ctrl.Result{}, nil
 	}
 	// wait until all objects are deleted
 	return ctrl.Result{RequeueAfter: 5 * time.Second}, nil
 }
 
-// fluxObjectsForDeletion returns the flux resources that should be cleaned up
+// objectsForDeletion returns the resources that should be cleaned up
 // when a Kyverno instance is deleted.
-func fluxObjectsForDeletion(namespace string) []client.Object {
+func objectsForDeletion(namespace string) []client.Object {
 	return []client.Object{
-		flux.OciRepositoryRef(OCIRepositoryName, namespace),
+		flux.OCIRepositoryRef(OCIRepositoryName, namespace),
 		flux.HelmReleaseRef(HelmReleaseName, namespace),
 	}
 }
@@ -234,38 +304,113 @@ func (r *KyvernoReconciler) kyvernoDomainObjectsExist(ctx context.Context, cl cl
 	return false, nil
 }
 
-func (r *KyvernoReconciler) replicateImagePullSecret(ctx context.Context, providerConfig *apiv1alpha1.ProviderConfig, targetNamespace string) error {
-	ref := providerConfig.GetImagePullSecretRef()
-	if ref == nil {
-		return nil
+func (r *KyvernoReconciler) replicateChartPullSecret(ctx context.Context, kyvernoVersion apiv1alpha1.KyvernoVersion, targetNamespace string) (string, error) {
+	if kyvernoVersion.ChartPullSecret == "" {
+		return "", nil
+	}
+	prefixedName, err := prefixedSecretName(kyvernoVersion.ChartPullSecret)
+	if err != nil {
+		return "", fmt.Errorf("error generating prefixed secret name: %w", err)
 	}
 	platformClient := r.PlatformCluster.Client()
 
 	sourceSecret := &corev1.Secret{}
-	sourceKey := client.ObjectKey{Name: ref.Name, Namespace: r.PodNamespace}
+	sourceKey := client.ObjectKey{Name: kyvernoVersion.ChartPullSecret, Namespace: r.PodNamespace}
 
 	if err := platformClient.Get(ctx, sourceKey, sourceSecret); err != nil {
-		return fmt.Errorf("failed to get source image pull secret: %q from namespace %q: %w", ref.Name, r.PodNamespace, err)
+		return "", fmt.Errorf("failed to get chart pull secret %q from namespace %q: %w", kyvernoVersion.ChartPullSecret, r.PodNamespace, err)
 	}
 
 	targetSecret := &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      ref.Name,
+			Name:      prefixedName,
 			Namespace: targetNamespace,
 		},
 	}
 	if _, err := ctrl.CreateOrUpdate(ctx, platformClient, targetSecret, func() error {
+		if targetSecret.Labels == nil {
+			targetSecret.Labels = map[string]string{}
+		}
+		targetSecret.Labels[managedByLabelKey] = managedByLabelValue
 		targetSecret.Data = sourceSecret.Data
 		targetSecret.Type = sourceSecret.Type
 		return nil
 	}); err != nil {
-		return fmt.Errorf("failed to replicate image pull secret: %q in namespace %q: %w", ref.Name, targetNamespace, err)
+		return "", fmt.Errorf("failed to replicate chart pull secret %q to namespace %q: %w", kyvernoVersion.ChartPullSecret, targetNamespace, err)
+	}
+	return prefixedName, nil
+}
+
+func prefixedSecretName(name string) (string, error) {
+	return ctrlutils.ShortenToXCharacters(fmt.Sprintf("%s%s", secretNamePrefix, name), ctrlutils.K8sMaxNameLength)
+}
+
+func (r *KyvernoReconciler) replicateImagePullSecrets(ctx context.Context, cpClient client.Client, helmValues *helm.Values) error {
+	for _, ref := range helmValues.Global.ImagePullSecrets {
+		sourceSecret := &corev1.Secret{}
+		if err := r.PlatformCluster.Client().Get(ctx, client.ObjectKey{Name: ref.Name, Namespace: r.PodNamespace}, sourceSecret); err != nil {
+			return fmt.Errorf("failed to get image pull secret %q from namespace %q: %w", ref.Name, r.PodNamespace, err)
+		}
+
+		prefixedName, err := prefixedSecretName(ref.Name)
+		if err != nil {
+			return fmt.Errorf("error generating prefixed secret name: %w", err)
+		}
+
+		targetSecret := &corev1.Secret{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      prefixedName,
+				Namespace: KyvernoNamespace,
+			},
+		}
+		if _, err := ctrl.CreateOrUpdate(ctx, cpClient, targetSecret, func() error {
+			if targetSecret.Labels == nil {
+				targetSecret.Labels = map[string]string{}
+			}
+			targetSecret.Labels[managedByLabelKey] = managedByLabelValue
+			targetSecret.Data = sourceSecret.Data
+			targetSecret.Type = sourceSecret.Type
+			return nil
+		}); err != nil {
+			return fmt.Errorf("failed to replicate image pull secret %q to namespace %q on ControlPlane: %w", ref.Name, KyvernoNamespace, err)
+		}
 	}
 	return nil
 }
 
-func (r *KyvernoReconciler) createOrUpdateOciRepository(ctx context.Context, svcobj *apiv1alpha1.Kyverno, _ spclusteraccess.ClusterContext, namespace string, providerConfig *apiv1alpha1.ProviderConfig) error {
-	ociRepo := flux.CreateOciRepository(providerConfig.GetChartURL(), svcobj.Spec.Version, OCIRepositoryName, namespace)
+// deleteOrphanSecrets deletes all secrets in namespace that are labeled as managed by this
+// controller but whose names are not in keep. Pass nil to delete all managed secrets.
+func deleteOrphanSecrets(ctx context.Context, c client.Client, namespace string, keep []string) error {
+	keepSet := make(map[string]struct{}, len(keep))
+	for _, name := range keep {
+		keepSet[name] = struct{}{}
+	}
+	list := &corev1.SecretList{}
+	if err := c.List(ctx, list,
+		client.InNamespace(namespace),
+		client.MatchingLabels{managedByLabelKey: managedByLabelValue},
+	); err != nil {
+		return fmt.Errorf("failed to list managed secrets in namespace %q: %w", namespace, err)
+	}
+	for i := range list.Items {
+		if _, ok := keepSet[list.Items[i].Name]; ok {
+			continue
+		}
+		if err := c.Delete(ctx, &list.Items[i]); client.IgnoreNotFound(err) != nil {
+			return fmt.Errorf("failed to delete orphan secret %q in namespace %q: %w", list.Items[i].Name, namespace, err)
+		}
+	}
+	return nil
+}
+
+func (r *KyvernoReconciler) createOrUpdateOCIRepository(ctx context.Context, namespace string, kyvernoVersion apiv1alpha1.KyvernoVersion, chartPullSecretName string) error {
+	ociRepo := flux.CreateOCIRepository(flux.OCIRepositoryParams{
+		ChartURL:            kyvernoVersion.GetChartURL(),
+		Version:             kyvernoVersion.ChartVersion,
+		Name:                OCIRepositoryName,
+		Namespace:           namespace,
+		ChartPullSecretName: chartPullSecretName,
+	})
 	managedObj := &sourcev1.OCIRepository{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      ociRepo.Name,
@@ -275,6 +420,10 @@ func (r *KyvernoReconciler) createOrUpdateOciRepository(ctx context.Context, svc
 	l := logf.FromContext(ctx)
 	l.Info("Creating OCI Repository", "object", ociRepo)
 	if _, err := ctrl.CreateOrUpdate(ctx, r.PlatformCluster.Client(), managedObj, func() error {
+		if managedObj.Labels == nil {
+			managedObj.Labels = map[string]string{}
+		}
+		managedObj.Labels[managedByLabelKey] = managedByLabelValue
 		managedObj.Spec = ociRepo.Spec
 		return nil
 	}); err != nil {
@@ -284,22 +433,24 @@ func (r *KyvernoReconciler) createOrUpdateOciRepository(ctx context.Context, svc
 	return nil
 }
 
-func (r *KyvernoReconciler) createOrUpdateHelmRelease(ctx context.Context, namespace string, svcobj *apiv1alpha1.Kyverno, providerConfig *apiv1alpha1.ProviderConfig) error {
-	fluxConfigRef, err := r.getMcpFluxConfig(ctx, namespace, svcobj.Name)
+func (r *KyvernoReconciler) createOrUpdateHelmRelease(ctx context.Context, namespace string, svcobj *apiv1alpha1.Kyverno, kyvernoVersion apiv1alpha1.KyvernoVersion) error {
+	fluxConfigRef, err := r.getControlPlaneFluxConfig(ctx, namespace, svcobj.Name)
 	if err != nil {
-		return fmt.Errorf("failed to get FluxConfig for MCP cluster: %w", err)
+		return fmt.Errorf("failed to get FluxConfig for ControlPlane cluster: %w", err)
 	}
 
 	helmRelease := flux.CreateHelmRelease(flux.HelmReleaseParams{
 		Name:             HelmReleaseName,
 		Namespace:        namespace,
-		ReleaseName:      apiv1alpha1.GetReleaseName(svcobj.Name),
 		TargetNamespace:  KyvernoNamespace,
 		StorageNamespace: KyvernoNamespace,
 		OCIRepoName:      OCIRepositoryName,
 		OCIRepoNamespace: namespace,
-		Values:           providerConfig.GetValues(),
+		Values:           kyvernoVersion.HelmValues,
 		KubeConfigRef:    fluxConfigRef,
+		DriftDetection: &helmv2.DriftDetection{
+			Mode: helmv2.DriftDetectionEnabled,
+		},
 	})
 	managedObj := &helmv2.HelmRelease{
 		ObjectMeta: metav1.ObjectMeta{
@@ -310,6 +461,10 @@ func (r *KyvernoReconciler) createOrUpdateHelmRelease(ctx context.Context, names
 	l := logf.FromContext(ctx)
 	l.Info("Creating HelmRelease", "object", managedObj)
 	if _, err := ctrl.CreateOrUpdate(ctx, r.PlatformCluster.Client(), managedObj, func() error {
+		if managedObj.Labels == nil {
+			managedObj.Labels = map[string]string{}
+		}
+		managedObj.Labels[managedByLabelKey] = managedByLabelValue
 		managedObj.Spec = helmRelease.Spec
 		return nil
 	}); err != nil {
@@ -318,7 +473,7 @@ func (r *KyvernoReconciler) createOrUpdateHelmRelease(ctx context.Context, names
 	return nil
 }
 
-func (r *KyvernoReconciler) getMcpFluxConfig(ctx context.Context, namespace string, objectName string) (*meta.SecretKeyReference, error) {
+func (r *KyvernoReconciler) getControlPlaneFluxConfig(ctx context.Context, namespace string, objectName string) (*meta.SecretKeyReference, error) {
 	mcpAccessRequest := &clustersv1alpha1.AccessRequest{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      clusteraccess.StableRequestNameFromLocalName(clusterAccessName, objectName) + requestSuffixMCP,
