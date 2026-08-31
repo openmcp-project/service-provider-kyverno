@@ -113,34 +113,11 @@ func (r *KyvernoReconciler) CreateOrUpdate(ctx context.Context, svcobj *apiv1alp
 		return ctrl.Result{}, fmt.Errorf("failed to replicate chart pull secret: %w", err)
 	}
 
-	// clean up any managed secrets in the tenant namespace that are no longer desired
-	desiredPlatformSecrets := []string{}
-	if prefixedChartPullSecret != "" {
-		desiredPlatformSecrets = append(desiredPlatformSecrets, prefixedChartPullSecret)
-	}
-	if err := deleteOrphanSecrets(ctx, r.PlatformCluster.Client(), tenantNamespace, desiredPlatformSecrets); err != nil {
-		internalstatus.Failed(svcobj, err.Error())
-		return ctrl.Result{}, fmt.Errorf("failed to clean up orphan secrets in tenant namespace: %w", err)
-	}
-
-	// 2. Extract Helm Values to delet orphan secrets on the ControlPlane cluster
+	// 2. Extract Helm Values
 	helmValues, err := helm.ExtractHelmValues(kyvernoVersion.HelmValues)
 	if err != nil {
 		internalstatus.Failed(svcobj, err.Error())
 		return ctrl.Result{}, fmt.Errorf("failed to extract helm values: %w", err)
-	}
-
-	desiredControlPlaneSecrets := make([]string, 0, len(helmValues.Global.ImagePullSecrets))
-	for _, ref := range helmValues.Global.ImagePullSecrets {
-		prefixedName, err := prefixedSecretName(ref.Name)
-		if err != nil {
-			return ctrl.Result{}, fmt.Errorf("error generating prefixed secret name: %w", err)
-		}
-		desiredControlPlaneSecrets = append(desiredControlPlaneSecrets, prefixedName)
-	}
-	if err := deleteOrphanSecrets(ctx, clusters.MCPCluster.Client(), KyvernoNamespace, desiredControlPlaneSecrets); err != nil {
-		internalstatus.Failed(svcobj, err.Error())
-		return ctrl.Result{}, fmt.Errorf("failed to clean up orphan secrets in kyverno namespace on MCP: %w", err)
 	}
 
 	// 3. Create or update OCIRepository object
@@ -159,6 +136,29 @@ func (r *KyvernoReconciler) CreateOrUpdate(ctx context.Context, svcobj *apiv1alp
 	if err := r.replicateImagePullSecrets(ctx, clusters.MCPCluster.Client(), helmValues); err != nil {
 		internalstatus.Failed(svcobj, err.Error())
 		return ctrl.Result{}, fmt.Errorf("failed to replicate image pull secrets: %w", err)
+	}
+
+	// 6. Clean up orphan secrets after all updates
+	desiredPlatformSecrets := []string{}
+	if prefixedChartPullSecret != "" {
+		desiredPlatformSecrets = append(desiredPlatformSecrets, prefixedChartPullSecret)
+	}
+	if err := deleteOrphanSecrets(ctx, r.PlatformCluster.Client(), tenantNamespace, desiredPlatformSecrets); err != nil {
+		internalstatus.Failed(svcobj, err.Error())
+		return ctrl.Result{}, fmt.Errorf("failed to clean up orphan secrets in tenant namespace: %w", err)
+	}
+
+	desiredControlPlaneSecrets := make([]string, 0, len(helmValues.Global.ImagePullSecrets))
+	for _, ref := range helmValues.Global.ImagePullSecrets {
+		prefixedName, err := prefixedSecretName(ref.Name)
+		if err != nil {
+			return ctrl.Result{}, fmt.Errorf("error generating prefixed secret name: %w", err)
+		}
+		desiredControlPlaneSecrets = append(desiredControlPlaneSecrets, prefixedName)
+	}
+	if err := deleteOrphanSecrets(ctx, clusters.MCPCluster.Client(), KyvernoNamespace, desiredControlPlaneSecrets); err != nil {
+		internalstatus.Failed(svcobj, err.Error())
+		return ctrl.Result{}, fmt.Errorf("failed to clean up orphan secrets in kyverno namespace on MCP: %w", err)
 	}
 
 	l.Info("Done Reconciling Kyverno resource", "name", svcobj.Name)
