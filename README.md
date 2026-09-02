@@ -109,7 +109,7 @@ metadata:
   name: kyverno
   namespace: openmcp-system
 spec:
-  image: ghcr.io/openmcp-project/images/service-provider-kyverno:v0.1.0
+  image: ghcr.io/openmcp-project/images/service-provider-kyverno:v1.0.0
 ```
 
 ## 📝 API Reference
@@ -159,6 +159,33 @@ spec:
         global:
           imagePullSecrets:
             - name: "image-registry-credentials"
+        # Override image registries per controller (registry: overrides defaultRegistry: ghcr.io)
+        admissionController:
+          initContainer:
+            image:
+              registry: "my.registry.example.com"
+              repository: kyverno/kyvernopre
+              tag: "v1.18.2"
+          container:
+            image: # e.g. results in Pod image: my.registry.example.com/kyverno/kyverno:v1.18.2
+              registry: "my.registry.example.com"
+              repository: kyverno/kyverno
+              tag: "v1.18.2"
+        backgroundController:
+          image:
+            registry: "my.registry.example.com"
+            repository: kyverno/background-controller
+            tag: "v1.18.2"
+        cleanupController:
+          image:
+            registry: "my.registry.example.com"
+            repository: kyverno/cleanup-controller
+            tag: "v1.18.2"
+        reportsController:
+          image:
+            registry: "my.registry.example.com"
+            repository: kyverno/reports-controller
+            tag: "v1.18.2"
 ```
 
 | Field                             | Type     | Description                                                                                                                                                                                                                                          |
