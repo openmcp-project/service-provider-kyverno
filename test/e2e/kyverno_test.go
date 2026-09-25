@@ -60,7 +60,7 @@ func TestServiceProvider(t *testing.T) {
 					return ctx
 				}
 				chartSecret := &corev1.Secret{}
-				chartSecret.SetName("privateregcred")
+				chartSecret.SetName("sp-kyverno-privateregcred")
 				chartSecret.SetNamespace(tenantNamespace)
 				secretList := &corev1.SecretList{
 					Items: []corev1.Secret{*chartSecret},
@@ -164,7 +164,7 @@ func TestServiceProvider(t *testing.T) {
 					return ctx
 				}
 				chartSecret := &corev1.Secret{}
-				chartSecret.SetName("privateregcred")
+				chartSecret.SetName("sp-kyverno-privateregcred")
 				chartSecret.SetNamespace(tenantNamespace)
 				if err := wait.For(
 					k8sconditions.New(c.Client().Resources()).ResourceDeleted(chartSecret),
