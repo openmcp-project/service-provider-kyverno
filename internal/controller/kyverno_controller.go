@@ -23,7 +23,6 @@ import (
 
 	"github.com/fluxcd/pkg/apis/meta"
 	"github.com/openmcp-project/controller-utils/pkg/clusters"
-	ctrlutils "github.com/openmcp-project/controller-utils/pkg/controller"
 	ctrlerrors "github.com/openmcp-project/controller-utils/pkg/errors"
 	clustersv1alpha1 "github.com/openmcp-project/openmcp-operator/api/clusters/v1alpha1"
 	"github.com/openmcp-project/openmcp-operator/lib/clusteraccess"
@@ -50,8 +49,6 @@ import (
 )
 
 const (
-	// secretNamePrefix is the prefix used for secrets replicated into tenant namespaces.
-	secretNamePrefix = "sp-kyverno-"
 	// managedByLabelKey / managedByLabelValue mark secrets that were replicated by this controller
 	// so they can be identified and cleaned up when no longer needed.
 	managedByLabelKey   = "app.kubernetes.io/managed-by"
@@ -133,7 +130,8 @@ func (r *KyvernoReconciler) CreateOrUpdate(ctx context.Context, svcobj *apiv1alp
 	}
 
 	// 5. Replicate image pull secrets to ControlPlane cluster
-	if err := r.replicateImagePullSecrets(ctx, clusters.MCPCluster.Client(), helmValues); err != nil {
+	replicatedSecrets, err := r.replicateImagePullSecrets(ctx, clusters.MCPCluster.Client(), helmValues)
+	if err != nil {
 		internalstatus.Failed(svcobj, err.Error())
 		return ctrl.Result{}, fmt.Errorf("failed to replicate image pull secrets: %w", err)
 	}
@@ -148,15 +146,7 @@ func (r *KyvernoReconciler) CreateOrUpdate(ctx context.Context, svcobj *apiv1alp
 		return ctrl.Result{}, fmt.Errorf("failed to clean up orphan secrets in tenant namespace: %w", err)
 	}
 
-	desiredControlPlaneSecrets := make([]string, 0, len(helmValues.Global.ImagePullSecrets))
-	for _, ref := range helmValues.Global.ImagePullSecrets {
-		prefixedName, err := prefixedSecretName(ref.Name)
-		if err != nil {
-			return ctrl.Result{}, fmt.Errorf("error generating prefixed secret name: %w", err)
-		}
-		desiredControlPlaneSecrets = append(desiredControlPlaneSecrets, prefixedName)
-	}
-	if err := deleteOrphanSecrets(ctx, clusters.MCPCluster.Client(), KyvernoNamespace, desiredControlPlaneSecrets); err != nil {
+	if err := deleteOrphanSecrets(ctx, clusters.MCPCluster.Client(), KyvernoNamespace, replicatedSecrets); err != nil {
 		internalstatus.Failed(svcobj, err.Error())
 		return ctrl.Result{}, fmt.Errorf("failed to clean up orphan secrets in kyverno namespace on MCP: %w", err)
 	}
@@ -308,10 +298,6 @@ func (r *KyvernoReconciler) replicateChartPullSecret(ctx context.Context, kyvern
 	if kyvernoVersion.ChartPullSecret == "" {
 		return "", nil
 	}
-	prefixedName, err := prefixedSecretName(kyvernoVersion.ChartPullSecret)
-	if err != nil {
-		return "", fmt.Errorf("error generating prefixed secret name: %w", err)
-	}
 	platformClient := r.PlatformCluster.Client()
 
 	sourceSecret := &corev1.Secret{}
@@ -323,7 +309,7 @@ func (r *KyvernoReconciler) replicateChartPullSecret(ctx context.Context, kyvern
 
 	targetSecret := &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      prefixedName,
+			Name:      kyvernoVersion.ChartPullSecret,
 			Namespace: targetNamespace,
 		},
 	}
@@ -338,28 +324,21 @@ func (r *KyvernoReconciler) replicateChartPullSecret(ctx context.Context, kyvern
 	}); err != nil {
 		return "", fmt.Errorf("failed to replicate chart pull secret %q to namespace %q: %w", kyvernoVersion.ChartPullSecret, targetNamespace, err)
 	}
-	return prefixedName, nil
+	return kyvernoVersion.ChartPullSecret, nil
 }
 
-func prefixedSecretName(name string) (string, error) {
-	return ctrlutils.ShortenToXCharacters(fmt.Sprintf("%s%s", secretNamePrefix, name), ctrlutils.K8sMaxNameLength)
-}
+func (r *KyvernoReconciler) replicateImagePullSecrets(ctx context.Context, cpClient client.Client, helmValues *helm.Values) ([]string, error) {
+	var replicatedSecrets []string
 
-func (r *KyvernoReconciler) replicateImagePullSecrets(ctx context.Context, cpClient client.Client, helmValues *helm.Values) error {
 	for _, ref := range helmValues.Global.ImagePullSecrets {
 		sourceSecret := &corev1.Secret{}
 		if err := r.PlatformCluster.Client().Get(ctx, client.ObjectKey{Name: ref.Name, Namespace: r.PodNamespace}, sourceSecret); err != nil {
-			return fmt.Errorf("failed to get image pull secret %q from namespace %q: %w", ref.Name, r.PodNamespace, err)
-		}
-
-		prefixedName, err := prefixedSecretName(ref.Name)
-		if err != nil {
-			return fmt.Errorf("error generating prefixed secret name: %w", err)
+			return nil, fmt.Errorf("failed to get image pull secret %q from namespace %q: %w", ref.Name, r.PodNamespace, err)
 		}
 
 		targetSecret := &corev1.Secret{
 			ObjectMeta: metav1.ObjectMeta{
-				Name:      prefixedName,
+				Name:      ref.Name,
 				Namespace: KyvernoNamespace,
 			},
 		}
@@ -372,10 +351,13 @@ func (r *KyvernoReconciler) replicateImagePullSecrets(ctx context.Context, cpCli
 			targetSecret.Type = sourceSecret.Type
 			return nil
 		}); err != nil {
-			return fmt.Errorf("failed to replicate image pull secret %q to namespace %q on ControlPlane: %w", ref.Name, KyvernoNamespace, err)
+			return nil, fmt.Errorf("failed to replicate image pull secret %q to namespace %q on ControlPlane: %w", ref.Name, KyvernoNamespace, err)
 		}
+
+		replicatedSecrets = append(replicatedSecrets, ref.Name)
 	}
-	return nil
+
+	return replicatedSecrets, nil
 }
 
 // deleteOrphanSecrets deletes all secrets in namespace that are labeled as managed by this
