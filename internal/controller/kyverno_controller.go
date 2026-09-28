@@ -150,11 +150,7 @@ func (r *KyvernoReconciler) CreateOrUpdate(ctx context.Context, svcobj *apiv1alp
 
 	desiredControlPlaneSecrets := make([]string, 0, len(helmValues.Global.ImagePullSecrets))
 	for _, ref := range helmValues.Global.ImagePullSecrets {
-		prefixedName, err := prefixedSecretName(ref.Name)
-		if err != nil {
-			return ctrl.Result{}, fmt.Errorf("error generating prefixed secret name: %w", err)
-		}
-		desiredControlPlaneSecrets = append(desiredControlPlaneSecrets, prefixedName)
+		desiredControlPlaneSecrets = append(desiredControlPlaneSecrets, ref.Name)
 	}
 	if err := deleteOrphanSecrets(ctx, clusters.MCPCluster.Client(), KyvernoNamespace, desiredControlPlaneSecrets); err != nil {
 		internalstatus.Failed(svcobj, err.Error())
@@ -352,14 +348,9 @@ func (r *KyvernoReconciler) replicateImagePullSecrets(ctx context.Context, cpCli
 			return fmt.Errorf("failed to get image pull secret %q from namespace %q: %w", ref.Name, r.PodNamespace, err)
 		}
 
-		prefixedName, err := prefixedSecretName(ref.Name)
-		if err != nil {
-			return fmt.Errorf("error generating prefixed secret name: %w", err)
-		}
-
 		targetSecret := &corev1.Secret{
 			ObjectMeta: metav1.ObjectMeta{
-				Name:      prefixedName,
+				Name:      ref.Name,
 				Namespace: KyvernoNamespace,
 			},
 		}

@@ -79,7 +79,7 @@ func TestServiceProvider(t *testing.T) {
 					return ctx
 				}
 				imagePullSecret := &corev1.Secret{}
-				imagePullSecret.SetName("sp-kyverno-privateregcred")
+				imagePullSecret.SetName("privateregcred")
 				imagePullSecret.SetNamespace("kyverno")
 				secretList := &corev1.SecretList{
 					Items: []corev1.Secret{*imagePullSecret},
