@@ -65,7 +65,7 @@ func CreateOCIRepository(p OCIRepositoryParams) *sourcev1.OCIRepository {
 			Namespace: p.Namespace,
 		},
 		Spec: sourcev1.OCIRepositorySpec{
-			Interval: metav1.Duration{Duration: time.Minute},
+			Interval: &metav1.Duration{Duration: time.Minute},
 			URL:      EnsureOCIScheme(p.ChartURL),
 			LayerSelector: &sourcev1.OCILayerSelector{
 				MediaType: "application/vnd.cncf.helm.chart.content.v1.tar+gzip",
