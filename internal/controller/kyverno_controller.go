@@ -26,7 +26,7 @@ import (
 	ctrlutils "github.com/openmcp-project/controller-utils/pkg/controller"
 	ctrlerrors "github.com/openmcp-project/controller-utils/pkg/errors"
 	clustersv1alpha1 "github.com/openmcp-project/openmcp-operator/api/clusters/v1alpha1"
-	"github.com/openmcp-project/openmcp-operator/lib/clusteraccess"
+	"github.com/openmcp-project/openmcp-operator/lib/clusteraccess/advanced"
 	libutils "github.com/openmcp-project/openmcp-operator/lib/utils"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -63,8 +63,11 @@ const (
 	// KyvernoNamespace is the dedicated namespace on the controlplane where Kyverno will be installed.
 	// Kyverno must be installed in its own namespace per upstream requirements.
 	KyvernoNamespace = "kyverno"
-	// requestSuffixMCP is the suffix used for the mcp cluster.
-	requestSuffixMCP = "--mcp"
+	// requestSuffixMCP is the suffix used for the mcp cluster AccessRequest name.
+	// It must match the suffix the platform uses when creating the AccessRequest: the
+	// suffix is folded into the stable-name algorithm (hash-aware truncation), NOT
+	// concatenated afterwards, otherwise long ControlPlane names produce a mismatched name.
+	requestSuffixMCP = "mcp"
 	// helmReleaseMaxFailures is the maximum number of consecutive failures from the HelmRelease conditions before the controller stops retrying and surfaces the failure in the Kyverno resource status.
 	helmReleaseMaxFailures = 5
 )
@@ -467,7 +470,7 @@ func (r *KyvernoReconciler) createOrUpdateHelmRelease(ctx context.Context, names
 func (r *KyvernoReconciler) getControlPlaneFluxConfig(ctx context.Context, namespace string, objectName string) (*meta.SecretKeyReference, error) {
 	mcpAccessRequest := &clustersv1alpha1.AccessRequest{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      clusteraccess.StableRequestNameFromLocalName(clusterAccessName, objectName) + requestSuffixMCP,
+			Name:      advanced.StableRequestNameFromLocalName(clusterAccessName, objectName, requestSuffixMCP),
 			Namespace: namespace,
 		},
 	}
